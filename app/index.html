@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Bellas Bullet</title>
+<meta name="description" content="Bellas digitala bullet journal" />
+<meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1d1c1a" media="(prefers-color-scheme: dark)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Bellas Bullet" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@400;700&family=Caveat:wght@500;700&family=Patrick+Hand&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="notebook">
+  <main id="app"></main>
+</div>
+
+<button class="capture-btn" data-act="capture" aria-label="Brain dump: skriv ner en tanke">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/><path d="M14 7l3 3"/></svg>
+</button>
+
+<nav class="tabbar">
+  <a class="tab" data-tab="day" href="#day"><span class="tab-sym">▢</span>Idag</a>
+  <a class="tab" data-tab="week" href="#week"><span class="tab-sym">≡</span>Vecka</a>
+  <a class="tab" data-tab="month" href="#month"><span class="tab-sym">▦</span>Månad</a>
+  <a class="tab" data-tab="future" href="#future"><span class="tab-sym">○</span>Framtid</a>
+  <button class="tab" data-act="search" aria-label="Sök i hela boken"><span class="tab-sym">⌕</span>Sök</button>
+  <a class="tab" data-tab="index" href="#index"><span class="tab-sym">☰</span>Index</a>
+</nav>
+
+<dialog id="sheet" class="sheet"></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

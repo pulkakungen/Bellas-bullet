@@ -1,0 +1,20 @@
+name = "bellas-bullet"
+main = "src/worker.js"
+compatibility_date = "2026-01-01"
+
+# Skapas med: npx wrangler kv namespace create BULLET_KV
+# Klistra in det "id" som kommandot skriver ut här:
+kv_namespaces = [
+  { binding = "BULLET_KV", id = "KLISTRA_IN_ID_HAR" }
+]
+
+# Var 15:e minut. Workern räknar själv ut svensk lokaltid och skickar
+# morgonnotisen 06:30 och kvällsnotisen 20:30.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Hemligheter (sätts med `npx wrangler secret put <NAMN>`, skrivs ALDRIG i denna fil):
+#   JOURNAL_KEY        synknyckeln, samma som i appens inställningar
+#   VAPID_PUBLIC_KEY   från `npx web-push generate-vapid-keys`
+#   VAPID_PRIVATE_KEY
+#   VAPID_SUBJECT      t.ex. "mailto:din@epost.se"
