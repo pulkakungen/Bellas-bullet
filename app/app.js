@@ -114,45 +114,9 @@ function mergeStates(a, b) {
   return out;
 }
 
-/* ---------------- Standarddata ---------------- */
-// Fasta id:n och u=1, så två enheter som startar var för sig slås ihop
-// i stället för att dubblera, och allt du själv ändrar vinner.
-
-function seedDefaults() {
-  const add = (map, rec) => {
-    if (!state[map][rec.id]) state[map][rec.id] = { ...rec, u: 1 };
-  };
-  const interval = [
-    ["dammsuga", "Dammsuga", 7],
-    ["vattorka", "Våttorka golven", 14],
-    ["lakan", "Byta lakan", 14],
-    ["tvatt", "Tvätta", 4],
-    ["kokbank", "Torka av köksbänkar", 2],
-    ["kylskap", "Rensa kylskåpet", 7],
-    ["badrum", "Städa badrummet", 7],
-    ["sopor", "Ta ut soporna", 3],
-    ["blommor", "Vattna blommorna", 7]
-  ];
-  interval.forEach(([id, name, every]) => add("routines", { id: "r-" + id, name, cat: "hem", mode: "interval", every }));
-  add("routines", { id: "r-planera", name: "Planera veckan", cat: "mig", mode: "weekday", weekday: 0 });
-
-  const zones = [
-    ["kok", "Kök", ["Torka luckor och handtag", "Rengör spis och ugn", "Rensa skafferiet"]],
-    ["badrum", "Badrum", ["Skura kakel och fogar", "Rensa avloppet", "Rensa skåpen"]],
-    ["sovrum", "Sovrum", ["Rensa garderoben", "Dammsug under sängen", "Gå igenom byrån"]],
-    ["vardagsrum", "Vardagsrum + hall", ["Damma hyllor", "Skor och ytterkläder", "Fönsterbrädor"]],
-    ["tvattstuga", "Tvättstuga", ["Sopa", "Plocka undan", "Mangla", "Stryka"]],
-    ["matkallare", "Matkällaren", ["Inventera", "Rensa gammalt", "Sopa golvet"]]
-  ];
-  zones.forEach(([id, name, tasks], i) => add("zones", { id: "z-" + id, name, tasks, order: i }));
-  add("collections", { id: "c-inkop", name: "Inköp" });
-  add("collections", { id: "c-bocker", name: "Lästa böcker", view: "shelf" });
-  add("collections", { id: "c-braindump", name: "Brain dump", note: true });
-  add("collections", { id: "c-onskelista", name: "Önskelista" });
-  add("habits", { id: "h-sang", name: "I säng 22.30", order: 0 });
-  add("habits", { id: "h-las", name: "Läsa", order: 1 });
-  persist();
-}
+// Appen startar tom. Brain dump finns alltid, utan att behöva skapas.
+const BRAINDUMP = { id: "c-braindump", name: "Brain dump", note: true };
+const getColl = (id) => get("collections", id) || (id === BRAINDUMP.id ? BRAINDUMP : null);
 
 /* ---------------- Hjälpare ---------------- */
 
@@ -675,7 +639,8 @@ function choresBlock(date) {
   if (due.length) {
     body += `<p class="hint">${busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : busy < 60 ? "Luft i kalendern idag, passa på." : "Lagom mycket idag."}</p>`;
   }
-  body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || '<li class="empty">Inget förfallet. Hemmet mår bra.</li>'}</ul>`;
+  const none = !infos.length ? '<li class="empty">Inga rutiner än. Lägg till under <a href="#routines">Index → Rutiner</a>.</li>' : '<li class="empty">Inget förfallet. Hemmet mår bra.</li>';
+  body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || none}</ul>`;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
 
@@ -823,10 +788,11 @@ function viewWeek(start) {
      <h3>Sömn</h3>${sleepChart(start)}`
   );
   html += block("Anteckningar", `<textarea rows="4" data-change="weekFocus" data-week="${start}" placeholder="Fokus, tankar, sånt som inte är uppgifter.">${esc(wk.focus || "")}</textarea>`);
-  const shop = get("collections", "c-inkop");
+  // En samling som heter "Inköp" visas som veckans inköpslista.
+  const shop = live("collections").find((c) => c.name.trim().toLowerCase().startsWith("inköp"));
   if (shop) {
-    const items = entriesWhere((e) => e.coll === "c-inkop" && e.status !== "done" && e.status !== "struck");
-    html += block(`<a href="#coll/c-inkop">Inköp</a>`, list(items.map((e) => entryRow(e)), "Inget att köpa.") + `<form class="mini-add" data-form="log" data-coll="c-inkop" autocomplete="off"><input name="text" placeholder="+ lägg till" /></form>`);
+    const items = entriesWhere((e) => e.coll === shop.id && e.status !== "done" && e.status !== "struck");
+    html += block(`<a href="#coll/${shop.id}">${esc(shop.name)}</a>`, list(items.map((e) => entryRow(e)), "Inget att köpa.") + `<form class="mini-add" data-form="log" data-coll="${shop.id}" autocomplete="off"><input name="text" placeholder="+ lägg till" /></form>`);
   }
   html += `</div>`;
   return html;
@@ -950,7 +916,7 @@ function searchResults() {
     return out;
   };
   const hits = [];
-  const where = (e) => (e.date ? niceDate(e.date) + " " + e.date.slice(0, 4) : e.month ? monthName(e.month) + " " + e.month.slice(0, 4) : get("collections", e.coll)?.name || "");
+  const where = (e) => (e.date ? niceDate(e.date) + " " + e.date.slice(0, 4) : e.month ? monthName(e.month) + " " + e.month.slice(0, 4) : getColl(e.coll)?.name || "");
   const href = (e) => (e.date ? `#day/${e.date}` : e.month ? `#month/${e.month}` : `#coll/${e.coll}`);
 
   for (const e of live("entries")) {
@@ -1024,7 +990,7 @@ function bookshelf(entries) {
 }
 
 function viewCollection(id) {
-  const c = get("collections", id);
+  const c = getColl(id);
   if (!c) return head("Samling", "Hittades inte", null, null);
   const entries = entriesWhere((e) => e.coll === id && !e.parent);
   const body = c.view === "shelf" ? bookshelf(entries) : list(entries.map((e) => entryRow(e)), "Tom samling.");
@@ -1217,6 +1183,7 @@ function viewRoutines() {
     block(
       "Zoner",
       `<p class="hint">En zon i veckan, i tur och ordning. Den här veckan: <b>${esc(zone ? zone.name : "ingen")}</b>.</p>
+       ${zones.length ? "" : '<p class="hint">Inga zoner än. Lägg till rum, t.ex. Kök eller Tvättstuga, med det som ska göras där.</p>'}
        <ul class="chores linked">${zones.map((z) => `<li data-act="editZone" data-id="${z.id}"><span class="c-name">${esc(z.name)}<span class="c-meta">${esc((z.tasks || []).join(", "))}</span></span>${zone && z.id === zone.id ? '<span class="tag">denna vecka</span>' : ""}</li>`).join("")}</ul>
        <button class="btn-small ghost" data-act="editZone">Ny zon</button>`
     )
@@ -1472,7 +1439,7 @@ async function habitDialog(id) {
 }
 
 async function collMenu(id) {
-  const c = get("collections", id);
+  const c = getColl(id);
   const res = await openSheet(
     "Samling",
     `<label class="field"><span>Namn</span><input name="name" value="${esc(c.name)}" required /></label>
@@ -1917,7 +1884,6 @@ async function gcalFetch() {
 
 /* ---------------- Start ---------------- */
 
-seedDefaults();
 window.addEventListener("hashchange", () => {
   showAllChores = false;
   if (route().view !== "kvall") planned = [];

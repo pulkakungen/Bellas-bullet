@@ -3,7 +3,8 @@
 Min digitala bullet journal, byggd på Ryder Carrolls metod: rapid logging med egen nyckel,
 index, framtidslogg, månadsuppslag, veckor och dagar som sidor i en bok, migrering och
 kvällsgenomgång. Dessutom rutiner för hemmet med roterande zoner, träning, vanor, mående,
-tacksamhet, födelsedagar, samlingar (brain dump, inköp, önskelista, Lästa böcker) och sök i allt.
+tacksamhet, födelsedagar, egna samlingar (lista eller bokhylla), brain dump och sök i allt.
+Appen startar helt tom, allt innehåll lägger du in själv.
 
 ```
 app/      statisk PWA, publiceras på GitHub Pages
