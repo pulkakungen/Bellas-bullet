@@ -124,7 +124,11 @@ const getColl = (id) => get("collections", id) || (id === BRAINDUMP.id ? BRAINDU
 // Fasta id:n: läggs aldrig in dubbelt, och det du ändrat skrivs inte över.
 const STADSPECIALER = {
   routines: [
-    ["dammsuga", "Dammsuga", 7],
+    ["dammsuga-trappor", "Dammsuga trapporna", 7],
+    ["dammsuga-horn", "Dammsuga hörn och lister", 14],
+    ["dammsuga-under", "Dammsuga under soffa och säng", 14],
+    ["dammsuga-kallare", "Dammsuga källaren", 14],
+    ["robot", "Tömma och rengöra robotdammsugaren", 7],
     ["vattorka", "Våttorka golven", 14],
     ["lakan", "Byta lakan", 14],
     ["tvatt", "Tvätta", 4],
@@ -141,10 +145,17 @@ const STADSPECIALER = {
     ["matkallare", "Matkällaren", ["Inventera", "Rensa gammalt", "Sopa golvet"]]
   ]
 };
+// Ersatta av mer precisa sysslor. Tas bort om de aldrig bockats av.
+const RETIRED_SPECIALS = ["r-dammsuga"];
+const everDone = (id) => live("done").some((d) => d.id.startsWith(id + "|"));
 const missingSpecials = () =>
+  RETIRED_SPECIALS.filter((id) => get("routines", id) && !everDone(id)).length +
   STADSPECIALER.routines.filter(([id]) => !get("routines", "r-" + id)).length + STADSPECIALER.zones.filter(([id]) => !get("zones", "z-" + id)).length;
 
 function addSpecials() {
+  RETIRED_SPECIALS.forEach((id) => {
+    if (get("routines", id) && !everDone(id)) remove("routines", id);
+  });
   STADSPECIALER.routines.forEach(([id, name, every]) => {
     if (!get("routines", "r-" + id)) put("routines", { id: "r-" + id, name, cat: "hem", mode: "interval", every, since: today() });
   });
@@ -1512,7 +1523,9 @@ function viewRoutines() {
   const zone = zoneForWeek(t);
   const zones = live("zones").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const specials = missingSpecials()
-    ? `<div class="banner"><span>Dina städspecialer: ${STADSPECIALER.routines.length} sysslor och ${STADSPECIALER.zones.length} zoner.</span><button class="btn-small" data-act="addSpecials">Lägg in mina städspecialer</button></div>`
+    ? live("routines").length
+      ? `<div class="banner"><span>Uppdaterade städspecialer: dammsugningen är uppdelad efter vad roboten inte hinner med.</span><button class="btn-small" data-act="addSpecials">Uppdatera</button></div>`
+      : `<div class="banner"><span>Dina städspecialer: ${STADSPECIALER.routines.length} sysslor och ${STADSPECIALER.zones.length} zoner.</span><button class="btn-small" data-act="addSpecials">Lägg in mina städspecialer</button></div>`
     : "";
   return (
     head("Hemmet och vardagen", "Rutiner", null, null) +
