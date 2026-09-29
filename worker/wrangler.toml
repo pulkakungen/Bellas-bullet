@@ -2,6 +2,10 @@ name = "bellas-bullet"
 main = "src/worker.js"
 compatibility_date = "2026-01-01"
 
+# Nås på https://bellas-bullet.bella-sassibrass.workers.dev, inga förhandsadresser.
+workers_dev = true
+preview_urls = false
+
 # Skapas med: npx wrangler kv namespace create BULLET_KV
 # Klistra in det "id" som kommandot skriver ut här:
 kv_namespaces = [
