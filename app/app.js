@@ -118,6 +118,40 @@ function mergeStates(a, b) {
 const BRAINDUMP = { id: "c-braindump", name: "Brain dump", note: true };
 const getColl = (id) => get("collections", id) || (id === BRAINDUMP.id ? BRAINDUMP : null);
 
+// Bellas städspecialer, läggs in med en knapp under Rutiner.
+// Fasta id:n: läggs aldrig in dubbelt, och det du ändrat skrivs inte över.
+const STADSPECIALER = {
+  routines: [
+    ["dammsuga", "Dammsuga", 7],
+    ["vattorka", "Våttorka golven", 14],
+    ["lakan", "Byta lakan", 14],
+    ["tvatt", "Tvätta", 4],
+    ["kokbank", "Torka av köksbänkarna", 1],
+    ["badrum", "Städa badrummet", 7],
+    ["blommor", "Vattna blommorna", 7]
+  ],
+  zones: [
+    ["kok", "Kök", ["Torka luckor och handtag", "Rengör spis och ugn", "Rensa skafferiet"]],
+    ["badrum", "Badrum", ["Skura kakel och fogar", "Rensa avloppet", "Rensa skåpen"]],
+    ["sovrum", "Sovrum", ["Rensa garderoben", "Dammsug under sängen", "Gå igenom byrån"]],
+    ["vardagsrum", "Vardagsrum och hall", ["Damma hyllor", "Skor och ytterkläder", "Fönsterbrädor"]],
+    ["tvattstuga", "Tvättstuga", ["Sopa", "Plocka undan", "Mangla", "Stryka"]],
+    ["matkallare", "Matkällaren", ["Inventera", "Rensa gammalt", "Sopa golvet"]]
+  ]
+};
+const missingSpecials = () =>
+  STADSPECIALER.routines.filter(([id]) => !get("routines", "r-" + id)).length + STADSPECIALER.zones.filter(([id]) => !get("zones", "z-" + id)).length;
+
+function addSpecials() {
+  STADSPECIALER.routines.forEach(([id, name, every]) => {
+    if (!get("routines", "r-" + id)) put("routines", { id: "r-" + id, name, cat: "hem", mode: "interval", every });
+  });
+  const base = live("zones").length;
+  STADSPECIALER.zones.forEach(([id, name, tasks], i) => {
+    if (!get("zones", "z-" + id)) put("zones", { id: "z-" + id, name, tasks, order: base + i });
+  });
+}
+
 /* ---------------- Hjälpare ---------------- */
 
 const esc = (s) =>
@@ -1166,8 +1200,12 @@ function viewRoutines() {
   const byName = (a, b) => a.r.name.localeCompare(b.r.name, "sv");
   const zone = zoneForWeek(t);
   const zones = live("zones").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const specials = missingSpecials()
+    ? `<div class="banner"><span>Dina städspecialer: ${STADSPECIALER.routines.length} sysslor och ${STADSPECIALER.zones.length} zoner.</span><button class="btn-small" data-act="addSpecials">Lägg in mina städspecialer</button></div>`
+    : "";
   return (
     head("Hemmet och vardagen", "Rutiner", null, null) +
+    specials +
     block("Med intervall", `<ul class="chores linked">${infos.filter((i) => i.r.mode !== "weekday").sort(byName).map(row).join("")}</ul>`) +
     block("Fasta veckodagar", `<ul class="chores linked">${infos.filter((i) => i.r.mode === "weekday").sort(byName).map(row).join("") || '<li class="empty">Inga än.</li>'}</ul>`) +
     `<button class="btn-primary" data-act="editRoutine">Ny rutin</button>` +
@@ -1546,6 +1584,11 @@ const actions = {
   editZone: (d) => zoneDialog(d.id),
   editBirthday: (d) => birthdayDialog(d.id),
   editHabit: (d) => habitDialog(d.id),
+  addSpecials: () => {
+    addSpecials();
+    toast("Städspecialerna är inlagda");
+    render();
+  },
   toggleHabit: (d) => {
     setDone(d.id, d.date, !isDone(d.id, d.date));
     render();
