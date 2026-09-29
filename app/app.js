@@ -978,7 +978,13 @@ async function lmvList() {
 
 // Samma förlåtande sökning som workern: stavfel, sammansatta ord, och
 // sällsynta ord väger tyngre än vanliga.
-const norm = (t) => String(t).toLowerCase().replace(/soya/g, "soja").replace(/[^a-zåäöéü0-9 ]/g, " ");
+const norm = (t) =>
+  String(t)
+    .toLowerCase()
+    .replace(/[éèê]/g, "e")
+    .replace(/[üú]/g, "u")
+    .replace(/soya/g, "soja")
+    .replace(/[^a-zåäö0-9 ]/g, " ");
 const STOP = new Set(["g", "gram", "dl", "ml", "cl", "l", "st", "msk", "tsk", "portion", "och", "med", "utan", "el"]);
 
 function editDistance(a, b, max) {
@@ -1065,9 +1071,18 @@ async function runFoodSearch(q) {
   let html = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
   out.innerHTML = html + '<p class="hint">Söker i Livsmedelsverket...</p>';
   try {
-    const items = await lmvList();
+    let found;
+    try {
+      found = searchFoods(await lmvList(), q);
+    } catch (e) {
+      // äldre worker utan /food/list: använd dess sökning i stället
+      if (!/404/.test(e.message)) throw e;
+      const data = await workerGet("/food/search?q=" + encodeURIComponent(q));
+      if (data.error) throw new Error(data.error);
+      found = data.results || [];
+    }
     if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
-    const lmv = searchFoods(items, q).map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
+    const lmv = found.map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
     html += `<h3>Livsmedelsverket</h3><ul class="food-results">${lmv.map(foodRow).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`;
   } catch (e) {
     html += `<p class="hint error">${esc(e.message)}</p>`;

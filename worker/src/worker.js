@@ -181,7 +181,13 @@ async function lmvList(env) {
 // - stavfel tolereras (ett eller två tecken fel beroende på ordlängd)
 // - sammansatta ord matchar delarna ("sojayoghurt" hittar "Yoghurt soja")
 // - sällsynta ord väger tyngre än vanliga ("soja" före "osötad")
-const norm = (t) => String(t).toLowerCase().replace(/soya/g, "soja").replace(/[^a-zåäöéü0-9 ]/g, " ");
+const norm = (t) =>
+  String(t)
+    .toLowerCase()
+    .replace(/[éèê]/g, "e")
+    .replace(/[üú]/g, "u")
+    .replace(/soya/g, "soja")
+    .replace(/[^a-zåäö0-9 ]/g, " ");
 const STOP = new Set(["g", "gram", "dl", "ml", "cl", "l", "st", "msk", "tsk", "portion", "och", "med", "utan", "el"]);
 
 function editDistance(a, b, max) {
