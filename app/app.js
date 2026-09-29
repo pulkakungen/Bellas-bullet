@@ -949,6 +949,110 @@ function parseAmount(q) {
   return Math.round(n * { g: 1, gram: 1, ml: 1, cl: 10, dl: 100, l: 1000 }[m[2].toLowerCase()]);
 }
 
+// Livsmedelsverkets lista hämtas en gång via workern och sparas i telefonen
+// i en vecka. Sökningen sker här, direkt och även utan nät.
+const LMV_CACHE = "bullet_lmv_v1";
+let lmvItems = null;
+async function lmvList() {
+  if (lmvItems) return lmvItems;
+  let cached = null;
+  try {
+    cached = JSON.parse(localStorage.getItem(LMV_CACHE) || "null");
+  } catch (e) {}
+  if (!cached || Date.now() - cached.at > 7 * 864e5) {
+    const data = await workerGet("/food/list");
+    if (data.error) throw new Error(data.error);
+    cached = { at: Date.now(), list: data.list };
+    try {
+      localStorage.setItem(LMV_CACHE, JSON.stringify(cached));
+    } catch (e) {}
+  }
+  lmvItems = cached.list.map(([nummer, namn]) => {
+    const name = norm(namn);
+    return { f: { nummer, namn }, name, tokens: name.split(/\s+/).filter(Boolean) };
+  });
+  return lmvItems;
+}
+
+// Samma förlåtande sökning som workern: stavfel, sammansatta ord, och
+// sällsynta ord väger tyngre än vanliga.
+const norm = (t) => String(t).toLowerCase().replace(/soya/g, "soja").replace(/[^a-zåäöéü0-9 ]/g, " ");
+const STOP = new Set(["g", "gram", "dl", "ml", "cl", "l", "st", "msk", "tsk", "portion", "och", "med", "utan", "el"]);
+
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function fuzzyContains(w, t) {
+  for (const len of [t.length - 1, t.length, t.length + 1]) {
+    for (let k = 0; k + len <= w.length; k++) if (editDistance(w.slice(k, k + len), t, 1) <= 1) return true;
+  }
+  return false;
+}
+
+// Hur väl ett sökord matchar ett livsmedelsnamn (0 till 1).
+function wordMatch(w, name, tokens) {
+  if (name.includes(w)) return 1;
+  const tol = w.length >= 8 ? 2 : w.length >= 5 ? 1 : 0;
+  let best = 0;
+  for (const t of tokens) {
+    if (tol && editDistance(w, t, tol) <= tol) best = Math.max(best, 0.9);
+    if (w.length >= 4 && t.includes(w.slice(0, Math.max(4, w.length - 2)))) best = Math.max(best, 0.7);
+  }
+  // sammansatt sökord: hur stor del av ordet täcks av namnets ord
+  // ("sojayoghurt" täcks av "soja" + "yoghurt"), ett stavfel per del tillåts
+  let cover = 0;
+  for (const t of tokens) {
+    if (t.length < 3) continue;
+    if (w.includes(t)) cover += t.length;
+    else if (t.length >= 5 && fuzzyContains(w, t)) cover += t.length - 1;
+    else {
+      // samma början, t.ex. "soja" i "sojayoghurt" och "sojadryck"
+      let cp = 0;
+      while (cp < w.length && cp < t.length && w[cp] === t[cp]) cp++;
+      if (cp >= 4) cover += cp;
+    }
+  }
+  if (cover) best = Math.max(best, 0.95 * Math.min(1, cover / w.length));
+  // stavfel inuti sammansatta ord: jämför mot lika långa bitar av namnet
+  if (!best && tol && w.length >= 6) {
+    const flat = tokens.join("");
+    for (let k = 0; k + w.length - 1 <= flat.length; k++) {
+      if (editDistance(w, flat.slice(k, k + w.length), tol) <= tol) {
+        best = 0.8;
+        break;
+      }
+    }
+  }
+  return best;
+}
+
+function searchFoods(items, q) {
+  const words = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w));
+  if (!words.length) return [];
+  const matches = items.map((it) => words.map((w) => wordMatch(w, it.name, it.tokens)));
+  const weights = words.map((_, wi) => Math.log((items.length + 1) / (matches.filter((m) => m[wi] >= 0.6).length + 1)) + 0.5);
+  const scored = items.map((it, idx) => ({ ...it, score: matches[idx].reduce((sum, m, wi) => sum + m * weights[wi], 0) })).filter((x) => x.score > 0);
+  const best = Math.max(0, ...scored.map((x) => x.score));
+  return scored
+    .filter((x) => x.score >= best * 0.45)
+    .sort((a, b) => b.score - a.score || a.f.namn.length - b.f.namn.length)
+    .slice(0, 25)
+    .map((x) => x.f);
+}
+
 async function runFoodSearch(q) {
   foodCtx.amount = parseAmount(q);
   const out = $("#food-results");
@@ -959,10 +1063,9 @@ async function runFoodSearch(q) {
   let html = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
   out.innerHTML = html + '<p class="hint">Söker i Livsmedelsverket...</p>';
   try {
-    const data = await workerGet("/food/search?q=" + encodeURIComponent(q));
+    const items = await lmvList();
     if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
-    if (data.error) throw new Error(data.error);
-    const lmv = (data.results || []).map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
+    const lmv = searchFoods(items, q).map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
     html += `<h3>Livsmedelsverket</h3><ul class="food-results">${lmv.map(foodRow).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`;
   } catch (e) {
     html += `<p class="hint error">${esc(e.message)}</p>`;

@@ -71,6 +71,13 @@ async function handleRequest(request, env, url) {
     return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
   }
 
+  if (url.pathname === "/food/list" && request.method === "GET") {
+    try {
+      return json({ list: (await lmvList(env)).map((f) => [f.nummer, f.namn]) });
+    } catch (err) {
+      return json({ error: err.message });
+    }
+  }
   if (url.pathname === "/food/search" && request.method === "GET") {
     return json(await foodSearch(env, url.searchParams.get("q") || ""));
   }
@@ -169,30 +176,96 @@ async function lmvList(env) {
   return list;
 }
 
-// Förlåtande sökning: mängder och enheter ignoreras, "soya" blir "soja",
-// och träffar rangordnas efter hur många sökord som finns i namnet.
+// Förlåtande sökning:
+// - mängder och enheter ignoreras ("2 dl"), "soya" blir "soja"
+// - stavfel tolereras (ett eller två tecken fel beroende på ordlängd)
+// - sammansatta ord matchar delarna ("sojayoghurt" hittar "Yoghurt soja")
+// - sällsynta ord väger tyngre än vanliga ("soja" före "osötad")
 const norm = (t) => String(t).toLowerCase().replace(/soya/g, "soja").replace(/[^a-zåäöéü0-9 ]/g, " ");
-const STOP = new Set(["g", "gram", "dl", "ml", "l", "st", "msk", "tsk", "portion", "och", "med", "utan"]);
+const STOP = new Set(["g", "gram", "dl", "ml", "cl", "l", "st", "msk", "tsk", "portion", "och", "med", "utan", "el"]);
+
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function fuzzyContains(w, t) {
+  for (const len of [t.length - 1, t.length, t.length + 1]) {
+    for (let k = 0; k + len <= w.length; k++) if (editDistance(w.slice(k, k + len), t, 1) <= 1) return true;
+  }
+  return false;
+}
+
+// Hur väl ett sökord matchar ett livsmedelsnamn (0 till 1).
+function wordMatch(w, name, tokens) {
+  if (name.includes(w)) return 1;
+  const tol = w.length >= 8 ? 2 : w.length >= 5 ? 1 : 0;
+  let best = 0;
+  for (const t of tokens) {
+    if (tol && editDistance(w, t, tol) <= tol) best = Math.max(best, 0.9);
+    if (w.length >= 4 && t.includes(w.slice(0, Math.max(4, w.length - 2)))) best = Math.max(best, 0.7);
+  }
+  // sammansatt sökord: hur stor del av ordet täcks av namnets ord
+  // ("sojayoghurt" täcks av "soja" + "yoghurt"), ett stavfel per del tillåts
+  let cover = 0;
+  for (const t of tokens) {
+    if (t.length < 3) continue;
+    if (w.includes(t)) cover += t.length;
+    else if (t.length >= 5 && fuzzyContains(w, t)) cover += t.length - 1;
+    else {
+      // samma början, t.ex. "soja" i "sojayoghurt" och "sojadryck"
+      let cp = 0;
+      while (cp < w.length && cp < t.length && w[cp] === t[cp]) cp++;
+      if (cp >= 4) cover += cp;
+    }
+  }
+  if (cover) best = Math.max(best, 0.95 * Math.min(1, cover / w.length));
+  // stavfel inuti sammansatta ord: jämför mot lika långa bitar av namnet
+  if (!best && tol && w.length >= 6) {
+    const flat = tokens.join("");
+    for (let k = 0; k + w.length - 1 <= flat.length; k++) {
+      if (editDistance(w, flat.slice(k, k + w.length), tol) <= tol) {
+        best = 0.8;
+        break;
+      }
+    }
+  }
+  return best;
+}
 
 async function foodSearch(env, q) {
   const words = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w));
   if (!words.length) return { results: [] };
   try {
     const list = await lmvList(env);
-    const scored = [];
-    for (const f of list) {
+    const items = list.map((f) => {
       const name = norm(f.namn);
-      let score = 0;
-      for (const w of words) {
-        if (name.includes(w)) score += 2;
-        else if (w.length >= 5 && (name.includes(w.slice(0, 4)) || name.includes(w.slice(-5)))) score += 1; // delord, t.ex. sojayoghurt
-      }
-      if (score) scored.push({ f, score, starts: name.startsWith(words[0].slice(0, 4)) });
-    }
+      return { f, name, tokens: name.split(/\s+/).filter(Boolean) };
+    });
+    const matches = items.map((it) => words.map((w) => wordMatch(w, it.name, it.tokens)));
+    // vikt per sökord: ju fler livsmedel ordet finns i, desto mindre väger det
+    const weights = words.map((_, wi) => {
+      const df = matches.filter((m) => m[wi] >= 0.6).length;
+      return Math.log((items.length + 1) / (df + 1)) + 0.5;
+    });
+    const scored = items
+      .map((it, idx) => ({ ...it, score: matches[idx].reduce((sum, m, wi) => sum + m * weights[wi], 0) }))
+      .filter((x) => x.score > 0);
     const best = Math.max(0, ...scored.map((x) => x.score));
     const hits = scored
-      .filter((x) => x.score >= Math.max(1, best - 1))
-      .sort((a, b) => b.score - a.score || b.starts - a.starts || a.f.namn.length - b.f.namn.length)
+      .filter((x) => x.score >= best * 0.45)
+      .sort((a, b) => b.score - a.score || a.f.namn.length - b.f.namn.length)
       .slice(0, 25)
       .map((x) => x.f);
     return { results: hits };
