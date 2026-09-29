@@ -681,3 +681,4 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .skin-steps li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-family: var(--hand); font-size: 19px; counter-increment: step; }
 .skin-steps li::before { content: counter(step); width: 18px; text-align: right; font-family: "Karla", sans-serif; font-size: 12px; color: var(--ink-faint); }
 .skin-steps li.is-done .c-name { color: var(--ink-faint); text-decoration: line-through; }
+.cell.on.sick { background: var(--accent); border-color: var(--accent); }

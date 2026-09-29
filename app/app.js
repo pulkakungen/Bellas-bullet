@@ -450,6 +450,7 @@ function choreCap(date) {
   return wd === 0 || wd === 6 ? s.choresWeekend ?? DEFAULT_CHORES.weekend : s.choresWeekday ?? DEFAULT_CHORES.weekday;
 }
 function choreLimit(date) {
+  if (dayRec(date).sick) return 0;
   const b = busyMinutes(date);
   const byCalendar = b >= 360 ? 0 : b >= 180 ? 1 : b >= 60 ? 2 : 5;
   return Math.min(choreCap(date), byCalendar);
@@ -752,7 +753,7 @@ function viewDay(date) {
 function choresBlock(date) {
   const infos = live("routines").map((r) => routineInfo(r, date));
   const isDaily = (i) => i.r.mode !== "weekday" && i.r.every <= 1;
-  const daily = infos.filter((i) => isDaily(i) && !i.done);
+  const daily = dayRec(date).sick ? [] : infos.filter((i) => isDaily(i) && !i.done);
   const due = infos.filter((i) => !isDaily(i) && i.due && !i.done).sort((a, b) => b.score - a.score);
   const doneToday = infos.filter((i) => i.done);
   const limit = choreLimit(date);
@@ -769,10 +770,11 @@ function choresBlock(date) {
   const busy = busyMinutes(date);
   if (due.length) {
     const wknd = [0, 6].includes(parseYmd(date).getDay());
-    body += `<p class="hint">${limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
+    body += `<p class="hint">${dayRec(date).sick ? "Du är sjuk idag. Vila, sysslorna väntar." : limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
   }
   const none = !infos.length ? '<li class="empty">Inga rutiner än. Lägg till under <a href="#routines">Index → Rutiner</a>.</li>' : '<li class="empty">Inget förfallet. Hemmet mår bra.</li>';
-  body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || none}</ul>`;
+  const sick = dayRec(date).sick;
+  body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || (sick ? "" : none)}</ul>`;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
   else if (!due.length && infos.some((i) => !isDaily(i))) {
@@ -780,7 +782,7 @@ function choresBlock(date) {
     if (next) body += `<p class="hint">Nästa: ${esc(next.i.r.name)} om ${next.d} ${next.d === 1 ? "dag" : "dagar"}.</p>`;
   }
 
-  const zone = zoneForWeek(date);
+  const zone = sick ? null : zoneForWeek(date);
   if (zone) {
     const wk = weekStart(date);
     const tasks = (zone.tasks || []).map((task) => {
@@ -826,6 +828,8 @@ function wellbeingBlock(date) {
      <div class="well-row"><span>Energi</span>${scale("energy", date, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
      <div class="well-row"><span>Vatten</span>
        <div class="water">${Array.from({ length: Math.max(WATER_GOAL, water) }, (_, i) => `<button class="glass ${i < water ? "on" : ""}" data-act="setWater" data-val="${i + 1}" data-date="${date}" aria-label="${i + 1} glas"></button>`).join("")}</div></div>
+     <div class="well-row"><span>Sjuk</span><button class="tick ${r.sick ? "on" : ""}" data-act="toggleSick" data-date="${date}">${sym(r.sick ? "done" : "open")}Sjuk idag</button></div>
+     ${r.sick ? `<label class="field"><span>Hur mår du? Symtom</span><input data-change="symptoms" data-date="${date}" value="${esc(r.symptoms || "")}" placeholder="t.ex. feber, halsont" /></label>` : ""}
      <div class="well-row"><span>Sömn</span><label class="inline-num"><input type="number" inputmode="decimal" min="0" max="16" step="0.5" value="${r.sleep ?? ""}" data-change="sleep" data-date="${date}" placeholder="0" /> timmar</label></div>
      <div class="well-row"><span>Medicin</span><button class="tick ${r.meds ? "on" : ""}" data-act="toggleMeds" data-date="${date}">${sym(r.meds ? "done" : "open")}Tagen</button></div>
      <label class="field"><span>Tacksam för idag</span><textarea rows="2" data-change="grateful" data-date="${date}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>`
@@ -1535,6 +1539,7 @@ function viewTracker(ym) {
 
   const row = (name, fn) => `<tr><th class="name">${name}</th>${dates.map(fn).join("")}</tr>`;
   const rows = [
+    row("Sjuk", (d) => cell(d, dayRec(d).sick ? "on sick" : "")),
     row("Humör", (d) => cell(d, dayRec(d).mood ? `lv${dayRec(d).mood}` : "")),
     row("Energi", (d) => cell(d, dayRec(d).energy ? `lv${dayRec(d).energy}` : "")),
     row("Vatten", (d) => cell(d, (dayRec(d).water || 0) >= WATER_GOAL ? "on" : (dayRec(d).water || 0) > 0 ? "half" : "")),
@@ -2022,6 +2027,10 @@ const actions = {
     setDay(d.date, { meals });
     render();
   },
+  toggleSick: (d) => {
+    setDay(d.date, { sick: !dayRec(d.date).sick });
+    render();
+  },
   toggleMeds: (d) => {
     setDay(d.date, { meds: !dayRec(d.date).meds });
     render();
@@ -2288,6 +2297,7 @@ document.addEventListener("change", async (ev) => {
   if (c === "steps") setDay(el.dataset.date, { steps: Math.max(0, parseInt(el.value, 10) || 0) });
   else if (c === "grateful") setDay(el.dataset.date, { grateful: el.value.trim() });
   else if (c === "work") setDay(el.dataset.date, { work: el.value.trim() });
+  else if (c === "symptoms") setDay(el.dataset.date, { symptoms: el.value.trim() });
   else if (c === "sleep") setDay(el.dataset.date, { sleep: el.value === "" ? null : Math.max(0, +el.value) });
   else if (c === "weekFocus") put("weeks", { ...(get("weeks", el.dataset.week) || { id: el.dataset.week }), focus: el.value.trim() });
   else if (c === "workerUrl") {
