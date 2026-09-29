@@ -689,3 +689,35 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .seg-btn.on { background: var(--ink); color: var(--paper); }
 .health-note { color: var(--accent); }
 .skip-btn { margin: 8px 8px 0 0; }
+
+/* ---------- Vikt ---------- */
+:root { --wc-trend: #3b6fd4; --wc-dot: #c8742f; }
+@media (prefers-color-scheme: dark) { :root { --wc-trend: #628ce0; --wc-dot: #c9793a; } }
+.hero { margin: 4px 0 12px; }
+.hero-num { font-family: var(--title); font-weight: 700; font-size: 64px; line-height: 1; }
+.hero-num span { font-size: 28px; color: var(--ink-soft); }
+.hero-sub { color: var(--ink-soft); font-size: 14px; margin-top: 4px; }
+.wc-range { margin: 6px 0 10px; }
+.wc-range .seg-btn { text-decoration: none; color: inherit; font-size: 15px; }
+.wc-wrap { position: relative; }
+.wc { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.wc-grid { stroke: var(--line); stroke-width: 1; }
+.wc-tick { fill: var(--ink-soft); font-size: 12px; font-family: "Karla", sans-serif; }
+.wc-label { fill: var(--ink-soft); font-size: 12px; font-family: "Karla", sans-serif; }
+.wc-trend { fill: none; stroke: var(--wc-trend); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.wc-dot { fill: var(--wc-dot); stroke: var(--paper); stroke-width: 2; }
+.wc-goal { stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.wc-cross { stroke: var(--ink-faint); stroke-width: 1; }
+.wc-tip { position: absolute; pointer-events: none; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.12); min-width: 110px; }
+.wc-tip span { color: var(--ink-soft); }
+.wc-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-soft); margin: 6px 0 4px; }
+.wc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.wc-sw { display: inline-block; }
+.wc-sw.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--wc-dot); }
+.wc-sw.line { width: 18px; height: 2px; background: var(--wc-trend); border-radius: 2px; }
+.wc-sw.goal { width: 18px; border-top: 2px dashed var(--ink-soft); }
+.wc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.wc-table th { text-align: left; font-weight: 500; color: var(--ink-soft); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.wc-table td { padding: 5px 6px; border-bottom: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+.wc-table a { text-decoration: none; }
+.wc-range .seg-btn.on { color: var(--paper); }

@@ -551,6 +551,7 @@ function render() {
     month: () => viewMonth(arg || t.slice(0, 7)),
     future: () => viewFuture(+(arg || t.slice(0, 4))),
     gratitude: () => viewGratitude(),
+    weight: () => viewWeight(arg || "90"),
     kvall: () => viewEvening(),
     index: () => viewIndex(),
     coll: () => viewCollection(arg),
@@ -851,6 +852,7 @@ function wellbeingBlock(date) {
        .map(([v, label]) => `<button class="seg-btn ${health(date) === v ? "on" : ""}" data-act="setHealth" data-val="${v || ""}" data-date="${date}">${label}</button>`)
        .join("")}</div></div>
      ${health(date) ? `<label class="field"><span>Hur mår du? Symtom</span><input data-change="symptoms" data-date="${date}" value="${esc(r.symptoms || "")}" placeholder="t.ex. feber, halsont" /></label>` : ""}
+     <div class="well-row"><span>Vikt</span><label class="inline-num"><input type="text" inputmode="decimal" value="${r.weight != null ? fmtKg(r.weight) : ""}" data-change="weight" data-date="${date}" placeholder="kg" /> kg</label><a class="link-btn" href="#weight">graf</a></div>
      <div class="well-row"><span>Sömn</span><label class="inline-num"><input type="number" inputmode="decimal" min="0" max="16" step="0.5" value="${r.sleep ?? ""}" data-change="sleep" data-date="${date}" placeholder="0" /> timmar</label></div>
      <div class="well-row"><span>Medicin</span><div class="btn-row">${[["medsAm", "Morgon"], ["medsPm", "Kväll"]]
        .map(([k, label]) => `<button class="tick ${r[k] ? "on" : ""}" data-act="toggleMeds" data-key="${k}" data-date="${date}">${sym(r[k] ? "done" : "open")}${label}</button>`)
@@ -964,6 +966,7 @@ async function lmvList() {
   if (!cached || Date.now() - cached.at > 7 * 864e5) {
     const data = await workerGet("/food/list");
     if (data.error) throw new Error(data.error);
+    if (!Array.isArray(data.list)) throw new Error("ingen livsmedelslista från workern");
     cached = { at: Date.now(), list: data.list };
     try {
       localStorage.setItem(LMV_CACHE, JSON.stringify(cached));
@@ -1075,10 +1078,9 @@ async function runFoodSearch(q) {
     try {
       found = searchFoods(await lmvList(), q);
     } catch (e) {
-      // äldre worker utan /food/list: använd dess sökning i stället
-      if (!/404/.test(e.message)) throw e;
-      const data = await workerGet("/food/search?q=" + encodeURIComponent(q));
-      if (data.error) throw new Error(data.error);
+      // listan gick inte att hämta (t.ex. äldre worker): använd workerns sökning
+      const data = await workerGet("/food/search?q=" + encodeURIComponent(q)).catch(() => null);
+      if (!data || data.error) throw new Error((data && data.error) || e.message);
       found = data.results || [];
     }
     if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
@@ -1115,7 +1117,7 @@ async function portionDialog(food, existing) {
   const res = await openSheet(
     esc(food.name),
     `<p class="hint">${per100 ? "Per 100 g" : "Per portion"}: ${macroLine(food)}</p>
-     <label class="field"><span>${per100 ? "Gram" : "Portioner"}</span><input type="number" name="amount" id="portion-amount" inputmode="decimal" min="0" step="any" value="${amount}" required /></label>
+     <label class="field"><span>${per100 ? "Gram" : "Portioner"}</span><input type="text" name="amount" id="portion-amount" inputmode="decimal" value="${amount}" required /></label>
      <p class="plan-preview" id="portion-preview">${macroLine(calc(amount))}</p>
      ${food.mine || existing ? "" : '<label class="check-field"><input type="checkbox" name="save" /> Spara bland mina maträtter</label>'}
      <input type="hidden" id="portion-food" value="${esc(JSON.stringify({ per100, kcal: food.kcal, p: food.p, f: food.f, c: food.c }))}" />`,
@@ -1522,6 +1524,7 @@ function viewIndex() {
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
         <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${live("entries").filter((e) => e.coll === "c-braindump").length}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>3</span></li>
+        <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
         <li><a href="#gratitude">Tacksamhet</a><span class="dots"></span><span>${live("days").filter((d) => d.grateful).length}</span></li>
         <li><a href="#birthdays">Födelsedagar</a><span class="dots"></span><span>${live("birthdays").length}</span></li>
         <li><a href="#key">Nyckel</a><span class="dots"></span><span>2</span></li>
@@ -1621,6 +1624,131 @@ function viewEvening() {
   );
 }
 
+/* ---------------- Vikt ---------------- */
+
+const fmtKg = (n) => (Math.round(n * 10) / 10).toLocaleString("sv-SE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+function weightSeries() {
+  const pts = live("days").filter((d) => d.weight).map((d) => ({ date: d.id, kg: d.weight })).sort((a, b) => a.date.localeCompare(b.date));
+  // trend: medel av vägningarna de senaste 7 dagarna, jämnar ut dagssvängningar
+  return pts.map((p) => {
+    const from = addDays(p.date, -6);
+    const win = pts.filter((q) => q.date >= from && q.date <= p.date);
+    return { ...p, trend: win.reduce((a, q) => a + q.kg, 0) / win.length };
+  });
+}
+
+const WEIGHT_RANGES = [["30", "30 dagar"], ["90", "3 mån"], ["365", "1 år"], ["all", "Allt"]];
+let weightPoints = [];
+
+function weightChart(pts, goal) {
+  // ritas i skärmens verkliga bredd, så text och punkter får rätt storlek
+  const W = Math.max(300, Math.min(680, ($("#app")?.clientWidth || 390) - 32)), H = 240, L = 36, R = 70, T = 14, B = 30;
+  const dates = pts.map((p) => p.date);
+  const d0 = dates[0], d1 = dates[dates.length - 1];
+  const span = Math.max(1, daysBetween(d0, d1));
+  const vals = [...pts.map((p) => p.kg), ...pts.map((p) => p.trend), ...(goal ? [goal] : [])];
+  let lo = Math.floor(Math.min(...vals) - 0.5), hi = Math.ceil(Math.max(...vals) + 0.5);
+  if (hi - lo < 2) { lo -= 1; hi += 1; }
+  const step = hi - lo > 12 ? 5 : hi - lo > 6 ? 2 : 1;
+  const x = (d) => L + (daysBetween(d0, d) / span) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  let grid = "";
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) grid += `<line class="wc-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="wc-tick" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  // några datum längs x-axeln
+  const nTicks = Math.min(5, dates.length);
+  let xt = "";
+  for (let i = 0; i < nTicks; i++) {
+    const d = addDays(d0, Math.round((span * i) / Math.max(1, nTicks - 1)));
+    xt += `<text class="wc-tick" x="${x(d)}" y="${H - 8}" text-anchor="middle">${+d.slice(8)}/${+d.slice(5, 7)}</text>`;
+  }
+  const goalLine = goal && goal >= lo && goal <= hi ? `<line class="wc-goal" x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}"/><text class="wc-label" x="${W - R + 6}" y="${y(goal) + 4}">mål ${fmtKg(goal)}</text>` : "";
+  const trend = pts.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(1)},${y(p.trend).toFixed(1)}`).join("");
+  const last = pts[pts.length - 1];
+  const dots = pts.map((p) => `<circle class="wc-dot" cx="${x(p.date).toFixed(1)}" cy="${y(p.kg).toFixed(1)}" r="4"/>`).join("");
+  weightPoints = pts.map((p) => ({ ...p, px: x(p.date), py: y(p.kg), ty: y(p.trend) }));
+  return `<div class="wc-wrap" id="wc-wrap">
+    <svg viewBox="0 0 ${W} ${H}" class="wc" id="wc" role="img" aria-label="Vikt över tid med trendlinje">
+      ${grid}${goalLine}
+      <line class="wc-cross" id="wc-cross" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+      ${pts.length > 1 ? `<path class="wc-trend" d="${trend}"/>` : ""}${dots}
+      <text class="wc-label" x="${x(last.date) + 8}" y="${y(last.trend) + 4}">trend ${fmtKg(last.trend)}</text>
+      ${xt}
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" id="wc-hit"/>
+    </svg>
+    <div class="wc-tip" id="wc-tip" hidden></div>
+  </div>
+  <div class="wc-legend"><span><i class="wc-sw dot"></i>Vägning</span><span><i class="wc-sw line"></i>Trend, snitt 7 dagar</span>${goal ? '<span><i class="wc-sw goal"></i>Mål</span>' : ""}</div>`;
+}
+
+function viewWeight(range) {
+  const t = today();
+  const all = weightSeries();
+  const from = range === "all" ? "0000" : addDays(t, -(+range || 90));
+  const pts = all.filter((p) => p.date >= from);
+  const goal = settings().weightGoal || null;
+  const last = all[all.length - 1];
+  const ago = last ? [...all].reverse().find((p) => p.date <= addDays(last.date, -30)) : null;
+  const diff = last && ago ? last.trend - ago.trend : null;
+  const hero = last
+    ? `<div class="hero"><div class="hero-num">${fmtKg(last.kg)}<span> kg</span></div>
+        <div class="hero-sub">${niceDate(last.date)}${diff != null ? ` · trend ${diff > 0 ? "+" : diff < 0 ? "−" : "±"}${fmtKg(Math.abs(diff))} kg på 30 dagar` : ""}${goal ? ` · ${fmtKg(Math.abs(last.trend - goal))} kg ${last.trend > goal ? "kvar" : "under"} till mål` : ""}</div></div>`
+    : '<p class="hint">Inga vägningar än. Skriv in vikten under Mående på dagssidan, eller här nedanför.</p>';
+  const filters = `<div class="seg wc-range" role="group" aria-label="Tidsperiod">${WEIGHT_RANGES.map(([v, l]) => `<a class="seg-btn ${range === v ? "on" : ""}" href="#weight/${v}">${l}</a>`).join("")}</div>`;
+  const rows = [...pts].reverse().map((p, i, arr) => {
+    const prev = arr[i + 1];
+    const d = prev ? p.kg - prev.kg : null;
+    return `<tr><td><a href="#day/${p.date}">${niceDate(p.date)}</a></td><td>${fmtKg(p.kg)}</td><td>${fmtKg(p.trend)}</td><td>${d == null ? "" : (d > 0 ? "+" : d < 0 ? "−" : "±") + fmtKg(Math.abs(d))}</td></tr>`;
+  });
+  return (
+    head("Tracker", "Vikt", null, null) +
+    block(
+      "",
+      `${hero}${filters}
+       ${pts.length ? weightChart(pts, goal) : all.length ? '<p class="hint">Inga vägningar i den här perioden.</p>' : ""}
+       <div class="row">
+         <label class="field"><span>Dagens vikt, kg</span><input type="text" inputmode="decimal" data-change="weight" data-date="${t}" value="${dayRec(t).weight != null ? fmtKg(dayRec(t).weight) : ""}" /></label>
+         <label class="field"><span>Målvikt, kg (valfritt)</span><input type="text" inputmode="decimal" data-change="weightGoal" value="${goal != null ? fmtKg(goal) : ""}" /></label>
+       </div>`
+    ) +
+    (rows.length ? block("Vägningar", `<table class="wc-table"><thead><tr><th>Datum</th><th>Vikt</th><th>Trend</th><th>Ändring</th></tr></thead><tbody>${rows.join("")}</tbody></table>`) : "")
+  );
+}
+
+// Hovring och tryck i grafen: närmaste vägning visas i en ruta.
+function weightHover(ev) {
+  const svg = $("#wc");
+  if (!svg || !weightPoints.length) return;
+  const box = svg.getBoundingClientRect();
+  const vx = ((ev.clientX - box.left) / box.width) * svg.viewBox.baseVal.width;
+  let best = weightPoints[0];
+  for (const p of weightPoints) if (Math.abs(p.px - vx) < Math.abs(best.px - vx)) best = p;
+  const cross = $("#wc-cross");
+  cross.setAttribute("x1", best.px);
+  cross.setAttribute("x2", best.px);
+  cross.setAttribute("visibility", "visible");
+  const tip = $("#wc-tip");
+  tip.hidden = false;
+  tip.innerHTML = `<b>${niceDate(best.date)}</b><br>${fmtKg(best.kg)} kg<br><span>trend ${fmtKg(best.trend)}</span>`;
+  const scale = box.width / svg.viewBox.baseVal.width;
+  const left = best.px * scale;
+  tip.style.left = Math.min(box.width - 120, Math.max(0, left + 10)) + "px";
+  tip.style.top = Math.max(0, best.py * scale - 60) + "px";
+}
+document.addEventListener("pointermove", (ev) => ev.target.closest && ev.target.closest("#wc") && weightHover(ev));
+// ny bredd (t.ex. när telefonen vrids): rita om viktgrafen
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => route().view === "weight" && render(), 200);
+});
+document.addEventListener("pointerdown", (ev) => ev.target.closest && ev.target.closest("#wc") && weightHover(ev));
+document.addEventListener("pointerleave", (ev) => {
+  if (ev.target && ev.target.id === "wc") {
+    $("#wc-tip") && ($("#wc-tip").hidden = true);
+    $("#wc-cross")?.setAttribute("visibility", "hidden");
+  }
+}, true);
+
 /* ---------------- Tacksamhet ---------------- */
 
 function viewGratitude() {
@@ -1704,6 +1832,7 @@ function viewTracker(ym) {
       const w = live("workouts").filter((x) => x.date === d);
       return cell(d, w.length ? "on" : "", w.map((x) => WORKOUT_TYPES[x.type][0]).join(""));
     }),
+    row("Vikt", (d) => cell(d, dayRec(d).weight ? "on" : "")),
     row("Sömn 7h+", (d) => cell(d, (dayRec(d).sleep || 0) >= 7 ? "on" : dayRec(d).sleep ? "half" : "", dayRec(d).sleep ? Math.round(dayRec(d).sleep) : "")),
     row("Tacksamhet", (d) => cell(d, dayRec(d).grateful ? "on" : "")),
     ...(skincare() ? [row("Hudvård", (d) => {
@@ -2448,6 +2577,14 @@ document.addEventListener("change", async (ev) => {
   if (c === "steps") setDay(el.dataset.date, { steps: Math.max(0, parseInt(el.value, 10) || 0) });
   else if (c === "grateful") setDay(el.dataset.date, { grateful: el.value.trim() });
   else if (c === "work") setDay(el.dataset.date, { work: el.value.trim() });
+  else if (c === "weight") {
+    const kg = parseFloat(el.value.replace(",", "."));
+    setDay(el.dataset.date, { weight: Number.isFinite(kg) && kg > 0 ? Math.round(kg * 10) / 10 : null });
+  } else if (c === "weightGoal") {
+    const kg = parseFloat(el.value.replace(",", "."));
+    put("meta", { ...settings(), weightGoal: Number.isFinite(kg) && kg > 0 ? kg : null });
+    return render();
+  }
   else if (c === "symptoms") setDay(el.dataset.date, { symptoms: el.value.trim() });
   else if (c === "sleep") setDay(el.dataset.date, { sleep: el.value === "" ? null : Math.max(0, +el.value) });
   else if (c === "weekFocus") put("weeks", { ...(get("weeks", el.dataset.week) || { id: el.dataset.week }), focus: el.value.trim() });
