@@ -134,7 +134,18 @@ const pick = (o, ...keys) => {
   }
   return undefined;
 };
-const firstArray = (data) => (Array.isArray(data) ? data : Object.values(data || {}).find(Array.isArray) || []);
+// Svaret är antingen en lista eller ett objekt med t.ex. _meta, _links och
+// själva listan. Ta listan med det namnet om den finns, annars den största
+// listan som inte är _links.
+const listIn = (data, ...names) => {
+  if (Array.isArray(data)) return data;
+  const entries = Object.entries(data || {}).filter(([k, v]) => Array.isArray(v));
+  for (const n of names) {
+    const hit = entries.find(([k]) => k.toLowerCase() === n.toLowerCase());
+    if (hit) return hit[1];
+  }
+  return entries.filter(([k]) => !k.startsWith("_")).sort((a, b) => b[1].length - a[1].length)[0]?.[1] || [];
+};
 const num = (v) => {
   const n = parseFloat(String(v ?? "").replace(",", ".").replace(/\s/g, ""));
   return Number.isFinite(n) ? n : null;
@@ -150,7 +161,7 @@ async function lmvList(env) {
   const cached = await env.BULLET_KV.get(LMV_LIST_KEY);
   if (cached) return JSON.parse(cached);
   const data = await lmvGet("/livsmedel?offset=0&limit=5000&sprak=1");
-  const list = firstArray(data)
+  const list = listIn(data, "livsmedel")
     .map((f) => ({ nummer: pick(f, "nummer", "id"), namn: pick(f, "namn", "name") }))
     .filter((f) => f.nummer != null && f.namn);
   if (!list.length) throw new Error("Livsmedelsverket gav en tom lista: " + JSON.stringify(data).slice(0, 300));
@@ -158,19 +169,32 @@ async function lmvList(env) {
   return list;
 }
 
+// Förlåtande sökning: mängder och enheter ignoreras, "soya" blir "soja",
+// och träffar rangordnas efter hur många sökord som finns i namnet.
+const norm = (t) => String(t).toLowerCase().replace(/soya/g, "soja").replace(/[^a-zåäöéü0-9 ]/g, " ");
+const STOP = new Set(["g", "gram", "dl", "ml", "l", "st", "msk", "tsk", "portion", "och", "med", "utan"]);
+
 async function foodSearch(env, q) {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w));
   if (!words.length) return { results: [] };
   try {
     const list = await lmvList(env);
-    const hits = list
-      .filter((f) => words.every((w) => f.namn.toLowerCase().includes(w)))
-      .sort((a, b) => {
-        const as = a.namn.toLowerCase().startsWith(words[0]) ? 0 : 1;
-        const bs = b.namn.toLowerCase().startsWith(words[0]) ? 0 : 1;
-        return as - bs || a.namn.length - b.namn.length;
-      })
-      .slice(0, 25);
+    const scored = [];
+    for (const f of list) {
+      const name = norm(f.namn);
+      let score = 0;
+      for (const w of words) {
+        if (name.includes(w)) score += 2;
+        else if (w.length >= 5 && (name.includes(w.slice(0, 4)) || name.includes(w.slice(-5)))) score += 1; // delord, t.ex. sojayoghurt
+      }
+      if (score) scored.push({ f, score, starts: name.startsWith(words[0].slice(0, 4)) });
+    }
+    const best = Math.max(0, ...scored.map((x) => x.score));
+    const hits = scored
+      .filter((x) => x.score >= Math.max(1, best - 1))
+      .sort((a, b) => b.score - a.score || b.starts - a.starts || a.f.namn.length - b.f.namn.length)
+      .slice(0, 25)
+      .map((x) => x.f);
     return { results: hits };
   } catch (err) {
     return { results: [], error: err.message };
@@ -183,7 +207,7 @@ async function foodNutrients(env, nummer) {
   const cached = await env.BULLET_KV.get(key);
   if (cached) return JSON.parse(cached);
   try {
-    const rows = firstArray(await lmvGet(`/livsmedel/${nummer}/naringsvarden?sprak=1`));
+    const rows = listIn(await lmvGet(`/livsmedel/${nummer}/naringsvarden?sprak=1`), "naringsvarden", "naringsvarde");
     const out = { nummer: +nummer, kcal: null, p: null, f: null, c: null };
     for (const r of rows) {
       const namn = String(pick(r, "namn", "name") || "").toLowerCase();

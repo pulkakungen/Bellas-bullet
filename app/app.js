@@ -915,7 +915,17 @@ async function openFoodSearch(date, meal) {
   if (!("ontouchstart" in window)) dlg.querySelector("#food-q").focus();
 }
 
+// "2 dl", "150 g", "1,5 l" först i sökningen blir förvald mängd i gram
+// (1 dl räknas som 100 g, vilket stämmer bra för yoghurt, mjölk och gröt).
+function parseAmount(q) {
+  const m = q.trim().match(/^(\d+(?:[.,]\d+)?)\s*(g|gram|dl|ml|cl|l)\b/i);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(",", "."));
+  return Math.round(n * { g: 1, gram: 1, ml: 1, cl: 10, dl: 100, l: 1000 }[m[2].toLowerCase()]);
+}
+
 async function runFoodSearch(q) {
+  foodCtx.amount = parseAmount(q);
   const out = $("#food-results");
   if (!out) return;
   foodResults = {};
@@ -952,7 +962,7 @@ async function pickFood(food) {
 // Mängd i gram för livsmedel per 100 g, eller antal portioner för egna maträtter.
 async function portionDialog(food, existing) {
   const per100 = !!food.per100;
-  const amount = existing ? (per100 ? existing.grams : existing.portions || 1) : per100 ? food.grams || 100 : 1;
+  const amount = existing ? (per100 ? existing.grams : existing.portions || 1) : per100 ? foodCtx?.amount || food.grams || 100 : 1;
   const calc = (a) => {
     const k = per100 ? a / 100 : a;
     return { kcal: (food.kcal || 0) * k, p: (food.p || 0) * k, f: (food.f || 0) * k, c: (food.c || 0) * k };
