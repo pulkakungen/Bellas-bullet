@@ -5,7 +5,7 @@ compatibility_date = "2026-01-01"
 # Skapas med: npx wrangler kv namespace create BULLET_KV
 # Klistra in det "id" som kommandot skriver ut här:
 kv_namespaces = [
-  { binding = "BULLET_KV", id = "KLISTRA_IN_ID_HAR" }
+  { binding = "BULLET_KV", id = "24554c846926477ca79f5b042e39e856" }
 ]
 
 # Var 15:e minut. Workern räknar själv ut svensk lokaltid och skickar
