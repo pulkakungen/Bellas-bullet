@@ -682,3 +682,9 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .skin-steps li::before { content: counter(step); width: 18px; text-align: right; font-family: "Karla", sans-serif; font-size: 12px; color: var(--ink-faint); }
 .skin-steps li.is-done .c-name { color: var(--ink-faint); text-decoration: line-through; }
 .cell.on.sick { background: var(--accent); border-color: var(--accent); }
+.cell.half.sick { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg-btn { border: 0; background: none; padding: 6px 12px; cursor: pointer; font-family: var(--hand); font-size: 17px; }
+.seg-btn + .seg-btn { border-left: 1px solid var(--line); }
+.seg-btn.on { background: var(--ink); color: var(--paper); }
+.health-note { color: var(--accent); }

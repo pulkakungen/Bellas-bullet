@@ -450,7 +450,7 @@ function choreCap(date) {
   return wd === 0 || wd === 6 ? s.choresWeekend ?? DEFAULT_CHORES.weekend : s.choresWeekday ?? DEFAULT_CHORES.weekday;
 }
 function choreLimit(date) {
-  if (dayRec(date).sick) return 0;
+  if (isSick(date)) return 0;
   const b = busyMinutes(date);
   const byCalendar = b >= 360 ? 0 : b >= 180 ? 1 : b >= 60 ? 2 : 5;
   return Math.min(choreCap(date), byCalendar);
@@ -459,6 +459,18 @@ function choreLimit(date) {
 const workoutsIn = (from, to) => live("workouts").filter((w) => w.date >= from && w.date <= to);
 const weekWorkouts = (date) => workoutsIn(weekStart(date), addDays(weekStart(date), 6));
 const dayRec = (date) => get("days", date) || { id: date };
+// Hälsa: "krasslig" påverkar träningen, "sjuk" även sysslorna.
+const health = (date) => {
+  const r = dayRec(date);
+  return r.health || (r.sick ? "sjuk" : null);
+};
+const isSick = (date) => health(date) === "sjuk";
+// Veckans träningsmål sänks om du varit krasslig eller sjuk flera dagar.
+function workoutGoal(date) {
+  const start = weekStart(date);
+  const poorly = Array.from({ length: 7 }, (_, i) => health(addDays(start, i))).filter(Boolean).length;
+  return poorly >= 5 ? 0 : poorly >= 3 ? 1 : WORKOUT_GOAL;
+}
 const setDay = (date, patch) => put("days", { ...dayRec(date), ...patch, id: date });
 
 function birthdaysOn(date) {
@@ -753,7 +765,7 @@ function viewDay(date) {
 function choresBlock(date) {
   const infos = live("routines").map((r) => routineInfo(r, date));
   const isDaily = (i) => i.r.mode !== "weekday" && i.r.every <= 1;
-  const daily = dayRec(date).sick ? [] : infos.filter((i) => isDaily(i) && !i.done);
+  const daily = isSick(date) ? [] : infos.filter((i) => isDaily(i) && !i.done);
   const due = infos.filter((i) => !isDaily(i) && i.due && !i.done).sort((a, b) => b.score - a.score);
   const doneToday = infos.filter((i) => i.done);
   const limit = choreLimit(date);
@@ -770,10 +782,10 @@ function choresBlock(date) {
   const busy = busyMinutes(date);
   if (due.length) {
     const wknd = [0, 6].includes(parseYmd(date).getDay());
-    body += `<p class="hint">${dayRec(date).sick ? "Du är sjuk idag. Vila, sysslorna väntar." : limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
+    body += `<p class="hint">${isSick(date) ? "Du är sjuk idag. Vila, sysslorna väntar." : limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
   }
   const none = !infos.length ? '<li class="empty">Inga rutiner än. Lägg till under <a href="#routines">Index → Rutiner</a>.</li>' : '<li class="empty">Inget förfallet. Hemmet mår bra.</li>';
-  const sick = dayRec(date).sick;
+  const sick = isSick(date);
   body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || (sick ? "" : none)}</ul>`;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
@@ -797,12 +809,16 @@ function choresBlock(date) {
 function trainingBlock(date) {
   const week = weekWorkouts(date);
   const todays = week.filter((w) => w.date === date);
-  const dots = Array.from({ length: Math.max(WORKOUT_GOAL, week.length) }, (_, i) => `<span class="goal-dot ${i < week.length ? "on" : ""}"></span>`).join("");
+  const goal = workoutGoal(date);
+  const dots = Array.from({ length: Math.max(goal, week.length) }, (_, i) => `<span class="goal-dot ${i < week.length ? "on" : ""}"></span>`).join("");
+  const h = health(date);
+  const healthNote = h === "sjuk" ? "Du är sjuk. Vila, ingen träning idag." : h === "krasslig" ? "Krasslig idag: ta det lugnt, ett lätt pass eller vila räcker." : "";
   const steps = dayRec(date).steps || "";
   const stepPct = steps ? Math.min(100, Math.round((steps / STEP_GOAL) * 100)) : 0;
   return block(
     "Träning",
-    `<div class="goal-row"><span>Veckan</span><span class="goal-dots">${dots}</span><span class="goal-num">${week.length}/${WORKOUT_GOAL} pass</span></div>
+    `${healthNote ? `<p class="hint health-note">${healthNote}</p>` : ""}
+     <div class="goal-row"><span>Veckan</span><span class="goal-dots">${dots}</span><span class="goal-num">${week.length}/${goal} pass${goal < WORKOUT_GOAL ? " (sänkt)" : ""}</span></div>
      <div class="btn-row">${Object.entries(WORKOUT_TYPES)
        .map(([k, v]) => `<button class="btn-small ghost" data-act="addWorkout" data-type="${k}" data-date="${date}">+ ${v}</button>`)
        .join("")}</div>
@@ -828,8 +844,10 @@ function wellbeingBlock(date) {
      <div class="well-row"><span>Energi</span>${scale("energy", date, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
      <div class="well-row"><span>Vatten</span>
        <div class="water">${Array.from({ length: Math.max(WATER_GOAL, water) }, (_, i) => `<button class="glass ${i < water ? "on" : ""}" data-act="setWater" data-val="${i + 1}" data-date="${date}" aria-label="${i + 1} glas"></button>`).join("")}</div></div>
-     <div class="well-row"><span>Sjuk</span><button class="tick ${r.sick ? "on" : ""}" data-act="toggleSick" data-date="${date}">${sym(r.sick ? "done" : "open")}Sjuk idag</button></div>
-     ${r.sick ? `<label class="field"><span>Hur mår du? Symtom</span><input data-change="symptoms" data-date="${date}" value="${esc(r.symptoms || "")}" placeholder="t.ex. feber, halsont" /></label>` : ""}
+     <div class="well-row"><span>Hälsa</span><div class="seg" role="group" aria-label="Hälsa">${[[null, "Frisk"], ["krasslig", "Krasslig"], ["sjuk", "Sjuk"]]
+       .map(([v, label]) => `<button class="seg-btn ${health(date) === v ? "on" : ""}" data-act="setHealth" data-val="${v || ""}" data-date="${date}">${label}</button>`)
+       .join("")}</div></div>
+     ${health(date) ? `<label class="field"><span>Hur mår du? Symtom</span><input data-change="symptoms" data-date="${date}" value="${esc(r.symptoms || "")}" placeholder="t.ex. feber, halsont" /></label>` : ""}
      <div class="well-row"><span>Sömn</span><label class="inline-num"><input type="number" inputmode="decimal" min="0" max="16" step="0.5" value="${r.sleep ?? ""}" data-change="sleep" data-date="${date}" placeholder="0" /> timmar</label></div>
      <div class="well-row"><span>Medicin</span><button class="tick ${r.meds ? "on" : ""}" data-act="toggleMeds" data-date="${date}">${sym(r.meds ? "done" : "open")}Tagen</button></div>
      <label class="field"><span>Tacksam för idag</span><textarea rows="2" data-change="grateful" data-date="${date}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>`
@@ -1196,7 +1214,7 @@ function viewWeek(start) {
   html += block(
     "Veckan",
     `<div class="stats">
-       <div><b>${workouts.length}/${WORKOUT_GOAL}</b><span>pass</span></div>
+       <div><b>${workouts.length}/${workoutGoal(start)}</b><span>pass</span></div>
        <div><b>${stepDays}/7</b><span>dagar ${STEP_GOAL / 1000}k</span></div>
        ${zone ? `<div><b>${zoneDone}/${(zone.tasks || []).length}</b><span>${esc(zone.name)}</span></div>` : ""}
      </div>
@@ -1539,7 +1557,7 @@ function viewTracker(ym) {
 
   const row = (name, fn) => `<tr><th class="name">${name}</th>${dates.map(fn).join("")}</tr>`;
   const rows = [
-    row("Sjuk", (d) => cell(d, dayRec(d).sick ? "on sick" : "")),
+    row("Hälsa", (d) => cell(d, isSick(d) ? "on sick" : health(d) === "krasslig" ? "half sick" : "")),
     row("Humör", (d) => cell(d, dayRec(d).mood ? `lv${dayRec(d).mood}` : "")),
     row("Energi", (d) => cell(d, dayRec(d).energy ? `lv${dayRec(d).energy}` : "")),
     row("Vatten", (d) => cell(d, (dayRec(d).water || 0) >= WATER_GOAL ? "on" : (dayRec(d).water || 0) > 0 ? "half" : "")),
@@ -2027,8 +2045,8 @@ const actions = {
     setDay(d.date, { meals });
     render();
   },
-  toggleSick: (d) => {
-    setDay(d.date, { sick: !dayRec(d.date).sick });
+  setHealth: (d) => {
+    setDay(d.date, { health: d.val || null, sick: d.val === "sjuk" });
     render();
   },
   toggleMeds: (d) => {
