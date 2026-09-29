@@ -9,7 +9,7 @@ const SENT_PREFIX = "sent:";
 
 const MORNING_MIN = 6 * 60 + 30;
 const EVENING_MIN = 20 * 60 + 30;
-const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meta"];
+const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "meta"];
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -71,6 +71,14 @@ async function handleRequest(request, env, url) {
     return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
   }
 
+  if (url.pathname === "/food/search" && request.method === "GET") {
+    return json(await foodSearch(env, url.searchParams.get("q") || ""));
+  }
+  const food = url.pathname.match(/^\/food\/(\d+)$/);
+  if (food && request.method === "GET") {
+    return json(await foodNutrients(env, food[1]));
+  }
+
   if (url.pathname === "/subscribe" && request.method === "POST") {
     const sub = await request.json().catch(() => null);
     if (!sub || !sub.endpoint) return json({ error: "ogiltig prenumeration" }, 400);
@@ -110,6 +118,89 @@ async function sendJournalPush(env, { title, body, tag }) {
   } catch (err) {
     console.error("journal push kastade fel", err && err.message);
     return false;
+  }
+}
+
+/* ---------------- Livsmedelsverket ---------------- */
+// Livsmedelsdatabasen (öppna data, API v1). Workern hämtar listan en gång
+// i veckan och söker själv, så appen slipper CORS och stora nedladdningar.
+// Tolkningen är tålig mot stora/små bokstäver i fältnamnen.
+
+const LMV = "https://dataportal.livsmedelsverket.se/livsmedel/api/v1";
+const LMV_LIST_KEY = "lmv:list";
+const pick = (o, ...keys) => {
+  for (const k of keys) {
+    for (const key of Object.keys(o || {})) if (key.toLowerCase() === k.toLowerCase()) return o[key];
+  }
+  return undefined;
+};
+const firstArray = (data) => (Array.isArray(data) ? data : Object.values(data || {}).find(Array.isArray) || []);
+const num = (v) => {
+  const n = parseFloat(String(v ?? "").replace(",", ".").replace(/\s/g, ""));
+  return Number.isFinite(n) ? n : null;
+};
+
+async function lmvGet(path) {
+  const res = await fetch(LMV + path, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Livsmedelsverket svarade ${res.status} på ${path}`);
+  return res.json();
+}
+
+async function lmvList(env) {
+  const cached = await env.BULLET_KV.get(LMV_LIST_KEY);
+  if (cached) return JSON.parse(cached);
+  const data = await lmvGet("/livsmedel?offset=0&limit=5000&sprak=1");
+  const list = firstArray(data)
+    .map((f) => ({ nummer: pick(f, "nummer", "id"), namn: pick(f, "namn", "name") }))
+    .filter((f) => f.nummer != null && f.namn);
+  if (!list.length) throw new Error("Livsmedelsverket gav en tom lista: " + JSON.stringify(data).slice(0, 300));
+  await env.BULLET_KV.put(LMV_LIST_KEY, JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 7 });
+  return list;
+}
+
+async function foodSearch(env, q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return { results: [] };
+  try {
+    const list = await lmvList(env);
+    const hits = list
+      .filter((f) => words.every((w) => f.namn.toLowerCase().includes(w)))
+      .sort((a, b) => {
+        const as = a.namn.toLowerCase().startsWith(words[0]) ? 0 : 1;
+        const bs = b.namn.toLowerCase().startsWith(words[0]) ? 0 : 1;
+        return as - bs || a.namn.length - b.namn.length;
+      })
+      .slice(0, 25);
+    return { results: hits };
+  } catch (err) {
+    return { results: [], error: err.message };
+  }
+}
+
+// Näringsvärden per 100 g: kcal, protein, fett och kolhydrater.
+async function foodNutrients(env, nummer) {
+  const key = "lmv:food:" + nummer;
+  const cached = await env.BULLET_KV.get(key);
+  if (cached) return JSON.parse(cached);
+  try {
+    const rows = firstArray(await lmvGet(`/livsmedel/${nummer}/naringsvarden?sprak=1`));
+    const out = { nummer: +nummer, kcal: null, p: null, f: null, c: null };
+    for (const r of rows) {
+      const namn = String(pick(r, "namn", "name") || "").toLowerCase();
+      const kod = String(pick(r, "euroFIRkod", "eurofir") || "").toUpperCase();
+      const enhet = String(pick(r, "enhet", "unit") || "").toLowerCase();
+      const varde = num(pick(r, "varde", "value"));
+      if (varde == null) continue;
+      if ((kod === "ENERC" && enhet === "kcal") || /energi.*kcal/.test(namn)) out.kcal = varde;
+      else if (kod === "PROT" || /^protein/.test(namn)) out.p = varde;
+      else if (kod === "FAT" || /^fett(,? totalt)?$/.test(namn)) out.f = varde;
+      else if (kod === "CHO" || /^kolhydrater/.test(namn)) out.c ??= varde;
+    }
+    if (out.kcal == null) return { error: "Hittade inte kalorier i svaret: " + JSON.stringify(rows.slice(0, 3)).slice(0, 300) };
+    await env.BULLET_KV.put(key, JSON.stringify(out), { expirationTtl: 60 * 60 * 24 * 30 });
+    return out;
+  } catch (err) {
+    return { error: err.message };
   }
 }
 

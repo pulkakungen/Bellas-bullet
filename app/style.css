@@ -649,3 +649,24 @@ a.btn-primary { text-align: center; }
 /* Sökning */
 .search-sheet #global-results { max-height: 60dvh; overflow-y: auto; margin-top: 10px; }
 mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+/* ---------- Mat ---------- */
+.macro { margin: 4px 0 10px; font-family: var(--hand); font-size: 19px; }
+.macro-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bar-fill.over { background: var(--accent); }
+.meal { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
+.meal-head { display: flex; align-items: center; gap: 10px; }
+.meal-head h3 { margin: 4px 0; flex: 0 0 auto; }
+.meal-head .hint { flex: 1; margin: 0; }
+.meal-head .btn-small { padding: 4px 10px; font-size: 13px; }
+.food-list { list-style: none; margin: 0; padding: 0; }
+.food-list li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0 3px 10px; font-family: var(--hand); font-size: 18px; cursor: pointer; }
+.food-list small { color: var(--ink-soft); font-family: "Karla", sans-serif; font-size: 12px; }
+.fl-kcal { color: var(--ink-soft); white-space: nowrap; font-size: 16px; }
+.food-sheet #food-results { max-height: 50dvh; overflow-y: auto; }
+.food-results { list-style: none; margin: 0 0 8px; padding: 0; }
+.food-pick { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; padding: 8px 6px; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; font-family: var(--hand); font-size: 18px; }
+.food-pick:hover { background: var(--line); }
+.food-pick small { font-family: "Karla", sans-serif; font-size: 12px; color: var(--ink-soft); }
+.hint.error { color: var(--accent); }
+.scan-video { width: 100%; max-height: 40dvh; background: #000; border-radius: 8px; object-fit: cover; }

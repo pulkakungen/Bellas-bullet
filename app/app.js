@@ -17,7 +17,7 @@ const WORKOUT_GOAL = 2;
 const WATER_GOAL = 8;
 const WORKOUT_TYPES = { complete: "Complete", styrka: "Styrka", cardio: "Cardio" };
 
-const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meta"];
+const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "meta"];
 
 /* ---------------- Datum ---------------- */
 
@@ -649,6 +649,7 @@ function viewDay(date) {
     );
   }
   html += choresBlock(date);
+  html += foodBlock(date);
   html += trainingBlock(date);
   html += wellbeingBlock(date);
   return html;
@@ -717,7 +718,6 @@ function scale(field, date, value, labels) {
 
 function wellbeingBlock(date) {
   const r = dayRec(date);
-  const meals = r.meals || [false, false, false];
   const water = r.water || 0;
   return block(
     "Mående",
@@ -725,13 +725,279 @@ function wellbeingBlock(date) {
      <div class="well-row"><span>Energi</span>${scale("energy", date, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
      <div class="well-row"><span>Vatten</span>
        <div class="water">${Array.from({ length: Math.max(WATER_GOAL, water) }, (_, i) => `<button class="glass ${i < water ? "on" : ""}" data-act="setWater" data-val="${i + 1}" data-date="${date}" aria-label="${i + 1} glas"></button>`).join("")}</div></div>
-     <div class="well-row"><span>Mat</span><div class="btn-row">${["Frukost", "Lunch", "Middag"]
-       .map((m, i) => `<button class="tick ${meals[i] ? "on" : ""}" data-act="toggleMeal" data-i="${i}" data-date="${date}">${sym(meals[i] ? "done" : "open")}${m}</button>`)
-       .join("")}</div></div>
      <div class="well-row"><span>Sömn</span><label class="inline-num"><input type="number" inputmode="decimal" min="0" max="16" step="0.5" value="${r.sleep ?? ""}" data-change="sleep" data-date="${date}" placeholder="0" /> timmar</label></div>
      <div class="well-row"><span>Medicin</span><button class="tick ${r.meds ? "on" : ""}" data-act="toggleMeds" data-date="${date}">${sym(r.meds ? "done" : "open")}Tagen</button></div>
      <label class="field"><span>Tacksam för idag</span><textarea rows="2" data-change="grateful" data-date="${date}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>`
   );
+}
+
+/* ---------------- Mat ---------------- */
+
+const MEALS = [["frukost", "Frukost"], ["lunch", "Lunch"], ["middag", "Middag"], ["mellanmal", "Mellanmål"]];
+const mealsOn = (date) => live("meals").filter((m) => m.date === date).sort((a, b) => (a.order || 0) - (b.order || 0));
+function mealTotals(date) {
+  const t = { kcal: 0, p: 0, f: 0, c: 0 };
+  for (const m of mealsOn(date)) for (const k of Object.keys(t)) t[k] += m[k] || 0;
+  return t;
+}
+const r0 = (n) => Math.round(n || 0);
+const r1 = (n) => Math.round((n || 0) * 10) / 10;
+const macroLine = (x) => `${r0(x.kcal)} kcal · P ${r1(x.p)} · F ${r1(x.f)} · K ${r1(x.c)}`;
+
+function foodBlock(date) {
+  const t = mealTotals(date);
+  const s = settings();
+  const bar = (val, goal, label, unit) => {
+    if (!goal) return `<div class="macro"><b>${r0(val)}</b> ${unit} ${label}</div>`;
+    const pct = Math.min(100, Math.round((val / goal) * 100));
+    const left = goal - val;
+    return `<div class="macro"><div class="macro-top"><span><b>${r0(val)}</b> / ${goal} ${unit} ${label}</span><span class="hint">${left >= 0 ? r0(left) + " kvar" : r0(-left) + " över"}</span></div>
+      <div class="bar"><div class="bar-fill ${val > goal ? "over" : val >= goal * 0.9 ? "full" : ""}" style="width:${pct}%"></div></div></div>`;
+  };
+  const sections = MEALS.map(([key, label]) => {
+    const items = mealsOn(date).filter((m) => m.meal === key);
+    const sum = items.reduce((a, m) => a + (m.kcal || 0), 0);
+    return `<div class="meal">
+      <div class="meal-head"><h3>${label}</h3><span class="hint">${sum ? r0(sum) + " kcal" : ""}</span>
+        <button class="btn-small ghost" data-act="addFood" data-meal="${key}" data-date="${date}">+ Lägg till</button></div>
+      <ul class="food-list">${items
+        .map((m) => `<li data-act="mealMenu" data-id="${m.id}"><span class="fl-name">${esc(m.name)}${m.grams ? ` <small>${r0(m.grams)} g</small>` : ""}</span><span class="fl-kcal">${r0(m.kcal)} kcal</span></li>`)
+        .join("")}</ul>
+    </div>`;
+  }).join("");
+  return block(
+    "Mat",
+    `${bar(t.kcal, s.kcalGoal, "", "kcal")}${bar(t.p, s.proteinGoal, "protein", "g")}
+     <p class="hint">Fett ${r1(t.f)} g · Kolhydrater ${r1(t.c)} g${!s.kcalGoal ? ' · <a href="#settings">sätt dagsmål</a>' : ""}</p>
+     ${sections}`
+  );
+}
+
+// Livsmedel att välja: per 100 g (Livsmedelsverket, streckkod) eller per portion (egna).
+let foodResults = {};
+function foodRow(food) {
+  if (food.id && food.id.startsWith("fd-")) food = { ...food, foodId: food.id, mine: true };
+  const id = "f" + Object.keys(foodResults).length;
+  foodResults[id] = food;
+  const meta = food.per100 ? (food.kcal != null ? `${r0(food.kcal)} kcal/100 g` : "Livsmedelsverket") : `${r0(food.kcal)} kcal/portion`;
+  return `<li><button type="button" class="food-pick" data-food-pick="${id}"><span>${esc(food.name)}</span><small>${meta}${food.mine ? " · min" : ""}</small></button></li>`;
+}
+
+async function workerGet(path) {
+  if (!local.syncKey) throw new Error("Lägg in synknyckeln i Inställningar för att söka i Livsmedelsverket");
+  const res = await fetch(workerUrl() + path, { headers: { "X-Journal-Key": local.syncKey } });
+  if (!res.ok) throw new Error("Workern svarade " + res.status);
+  return res.json();
+}
+
+let foodCtx = null; // { date, meal }
+let foodTimer;
+async function openFoodSearch(date, meal) {
+  await closeSheet();
+  foodCtx = { date, meal };
+  foodResults = {};
+  const dlg = sheet();
+  const label = MEALS.find(([k]) => k === meal)[1];
+  const mine = live("foods").sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 12);
+  dlg.innerHTML = `<form method="dialog" class="sheet-form food-sheet">
+    <p class="sheet-title">${label}</p>
+    <input type="search" id="food-q" placeholder="Sök livsmedel, t.ex. havregryn" autocomplete="off" />
+    <div class="btn-row">
+      <button type="button" class="btn-small ghost" data-food-act="scan">Skanna streckkod</button>
+      <button type="button" class="btn-small ghost" data-food-act="manual">Skriv in själv</button>
+    </div>
+    <div id="food-results">${mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : '<p class="hint">Sök i Livsmedelsverkets databas, skanna en förpackning eller skriv in själv. Det du sparar hamnar under Mina maträtter.</p>'}</div>
+    <div class="sheet-buttons"><button value="close" class="ghost">Stäng</button></div>
+  </form>`;
+  dlg.onclose = null;
+  dlg.showModal();
+  if (!("ontouchstart" in window)) dlg.querySelector("#food-q").focus();
+}
+
+async function runFoodSearch(q) {
+  const out = $("#food-results");
+  if (!out) return;
+  foodResults = {};
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const mine = live("foods").filter((f) => words.every((w) => f.name.toLowerCase().includes(w)));
+  let html = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
+  out.innerHTML = html + '<p class="hint">Söker i Livsmedelsverket...</p>';
+  try {
+    const data = await workerGet("/food/search?q=" + encodeURIComponent(q));
+    if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
+    if (data.error) throw new Error(data.error);
+    const lmv = (data.results || []).map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
+    html += `<h3>Livsmedelsverket</h3><ul class="food-results">${lmv.map(foodRow).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`;
+  } catch (e) {
+    html += `<p class="hint error">${esc(e.message)}</p>`;
+  }
+  out.innerHTML = html;
+}
+
+async function pickFood(food) {
+  await closeSheet();
+  if (food.lmv && food.kcal == null) {
+    try {
+      const n = await workerGet("/food/" + food.lmv);
+      if (n.error) throw new Error(n.error);
+      Object.assign(food, { kcal: n.kcal, p: n.p, f: n.f, c: n.c });
+    } catch (e) {
+      return toast(e.message);
+    }
+  }
+  portionDialog(food);
+}
+
+// Mängd i gram för livsmedel per 100 g, eller antal portioner för egna maträtter.
+async function portionDialog(food, existing) {
+  const per100 = !!food.per100;
+  const amount = existing ? (per100 ? existing.grams : existing.portions || 1) : per100 ? food.grams || 100 : 1;
+  const calc = (a) => {
+    const k = per100 ? a / 100 : a;
+    return { kcal: (food.kcal || 0) * k, p: (food.p || 0) * k, f: (food.f || 0) * k, c: (food.c || 0) * k };
+  };
+  const res = await openSheet(
+    esc(food.name),
+    `<p class="hint">${per100 ? "Per 100 g" : "Per portion"}: ${macroLine(food)}</p>
+     <label class="field"><span>${per100 ? "Gram" : "Portioner"}</span><input type="number" name="amount" id="portion-amount" inputmode="decimal" min="0" step="any" value="${amount}" required /></label>
+     <p class="plan-preview" id="portion-preview">${macroLine(calc(amount))}</p>
+     ${food.mine || existing ? "" : '<label class="check-field"><input type="checkbox" name="save" /> Spara bland mina maträtter</label>'}
+     <input type="hidden" id="portion-food" value="${esc(JSON.stringify({ per100, kcal: food.kcal, p: food.p, f: food.f, c: food.c }))}" />`,
+    [{ value: "ok", label: existing ? "Spara" : "Lägg till", cls: "btn-primary" }, ...(existing ? [{ value: "delete", label: "Ta bort", cls: "danger", novalidate: true }] : []), CLOSE]
+  );
+  if (res.action === "delete") {
+    remove("meals", existing.id);
+    return render();
+  }
+  if (res.action !== "ok") return;
+  const a = Math.max(0, parseFloat(String(res.data.amount).replace(",", ".")) || 0);
+  const v = calc(a);
+  const rec = {
+    ...(existing || { id: "m-" + uid(), date: foodCtx.date, meal: foodCtx.meal, order: Date.now() }),
+    name: food.name,
+    ...v,
+    grams: per100 ? a : food.grams ? food.grams * a : null,
+    portions: per100 ? null : a,
+    src: { per100, kcal: food.kcal, p: food.p, f: food.f, c: food.c, grams: food.grams || null, lmv: food.lmv || null, ean: food.ean || null, foodId: food.foodId || null }
+  };
+  put("meals", rec);
+  if (food.foodId && get("foods", food.foodId)) put("foods", { ...get("foods", food.foodId), used: (get("foods", food.foodId).used || 0) + 1 });
+  if (res.data.save) put("foods", { id: "fd-" + uid(), name: food.name, per100, kcal: food.kcal, p: food.p, f: food.f, c: food.c, grams: per100 ? a : food.grams || null, ean: food.ean || null, lmv: food.lmv || null, used: 1 });
+  toast(`${food.name}: ${r0(v.kcal)} kcal`);
+  render();
+}
+
+async function manualFood() {
+  const res = await openSheet(
+    "Skriv in själv",
+    `<label class="field"><span>Vad åt du?</span><input name="name" required /></label>
+     <div class="row">
+       <label class="field"><span>Kalorier</span><input name="kcal" type="number" inputmode="decimal" min="0" step="any" required /></label>
+       <label class="field"><span>Protein g</span><input name="p" type="number" inputmode="decimal" min="0" step="any" /></label>
+     </div>
+     <div class="row">
+       <label class="field"><span>Fett g</span><input name="f" type="number" inputmode="decimal" min="0" step="any" /></label>
+       <label class="field"><span>Kolhydrater g</span><input name="c" type="number" inputmode="decimal" min="0" step="any" /></label>
+     </div>
+     <label class="check-field"><input type="checkbox" name="save" checked /> Spara bland mina maträtter</label>`,
+    [{ value: "ok", label: "Lägg till", cls: "btn-primary" }, CLOSE]
+  );
+  if (res.action !== "ok") return;
+  const n = (k) => parseFloat(String(res.data[k] || 0).replace(",", ".")) || 0;
+  const food = { name: res.data.name.trim(), per100: false, kcal: n("kcal"), p: n("p"), f: n("f"), c: n("c") };
+  let foodId = null;
+  if (res.data.save) {
+    foodId = "fd-" + uid();
+    put("foods", { id: foodId, ...food, used: 1 });
+  }
+  put("meals", { id: "m-" + uid(), date: foodCtx.date, meal: foodCtx.meal, order: Date.now(), name: food.name, kcal: food.kcal, p: food.p, f: food.f, c: food.c, portions: 1, src: { ...food, foodId } });
+  toast(`${food.name}: ${r0(food.kcal)} kcal`);
+  render();
+}
+
+// Streckkod: webbläsarens inbyggda läsare om den finns, annars ZXing. Värden från Open Food Facts.
+let scanStop = null;
+async function scanBarcode() {
+  await closeSheet();
+  const dlg = sheet();
+  dlg.innerHTML = `<form method="dialog" class="sheet-form">
+    <p class="sheet-title">Skanna streckkod</p>
+    <video id="scan-video" class="scan-video" playsinline muted></video>
+    <p class="hint" id="scan-status">Håll streckkoden framför kameran.</p>
+    <div class="log-input-row"><input id="scan-code" inputmode="numeric" placeholder="eller skriv siffrorna" /><button type="button" class="btn-small" data-food-act="code">Sök</button></div>
+    <div class="sheet-buttons"><button value="close" class="ghost">Stäng</button></div>
+  </form>`;
+  dlg.onclose = () => scanStop && scanStop();
+  dlg.showModal();
+  const video = dlg.querySelector("#scan-video");
+  const status = dlg.querySelector("#scan-status");
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = stream;
+    await video.play();
+    let running = true;
+    scanStop = () => {
+      running = false;
+      stream.getTracks().forEach((t) => t.stop());
+      scanStop = null;
+    };
+    if ("BarcodeDetector" in window) {
+      const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+      const loop = async () => {
+        if (!running) return;
+        const codes = await det.detect(video).catch(() => []);
+        if (codes.length) return lookupBarcode(codes[0].rawValue);
+        requestAnimationFrame(loop);
+      };
+      loop();
+    } else {
+      await loadScript("https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js");
+      const reader = new ZXing.BrowserMultiFormatReader();
+      const stopStream = scanStop;
+      scanStop = () => {
+        reader.reset();
+        stopStream();
+      };
+      reader.decodeFromStream(stream, video, (result) => {
+        if (result && running) lookupBarcode(result.getText());
+      });
+    }
+  } catch (e) {
+    status.textContent = "Kameran gick inte att starta. Skriv siffrorna under streckkoden i stället.";
+  }
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const el = document.createElement("script");
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error("kunde inte ladda " + src));
+    document.head.append(el);
+  });
+}
+
+async function lookupBarcode(code) {
+  code = String(code).replace(/\D/g, "");
+  if (!code) return;
+  if (scanStop) scanStop();
+  const status = $("#scan-status");
+  if (status) status.textContent = `Hittade ${code}, hämtar...`;
+  const saved = live("foods").find((f) => f.ean === code);
+  if (saved) return pickFood({ ...saved, foodId: saved.id, mine: true });
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_sv,brands,nutriments,serving_quantity`);
+    const data = await res.json();
+    if (!data.product) throw new Error("not found");
+    const n = data.product.nutriments || {};
+    const kcal = n["energy-kcal_100g"] ?? (n["energy_100g"] ? n["energy_100g"] / 4.184 : null);
+    if (kcal == null) throw new Error("no kcal");
+    const name = [data.product.product_name_sv || data.product.product_name, (data.product.brands || "").split(",")[0]].filter(Boolean).join(", ") || "Vara " + code;
+    pickFood({ name, per100: true, ean: code, kcal, p: n.proteins_100g, f: n.fat_100g, c: n.carbohydrates_100g, grams: +data.product.serving_quantity || 100 });
+  } catch (e) {
+    if (status) status.textContent = `Hittade inte ${code} i Open Food Facts. Tryck Stäng och välj Skriv in själv.`;
+  }
 }
 
 /* ---------------- Vecka ---------------- */
@@ -1161,7 +1427,16 @@ function viewTracker(ym) {
     row("Humör", (d) => cell(d, dayRec(d).mood ? `lv${dayRec(d).mood}` : "")),
     row("Energi", (d) => cell(d, dayRec(d).energy ? `lv${dayRec(d).energy}` : "")),
     row("Vatten", (d) => cell(d, (dayRec(d).water || 0) >= WATER_GOAL ? "on" : (dayRec(d).water || 0) > 0 ? "half" : "")),
-    row("Mat", (d) => cell(d, (dayRec(d).meals || []).filter(Boolean).length === 3 ? "on" : (dayRec(d).meals || []).some(Boolean) ? "half" : "")),
+    row("Kalorier", (d) => {
+      const t = mealTotals(d);
+      const goal = settings().kcalGoal;
+      return cell(d, !t.kcal ? "" : goal && t.kcal > goal * 1.1 ? "half" : "on", t.kcal ? Math.round(t.kcal / 100) : "");
+    }),
+    row("Protein", (d) => {
+      const t = mealTotals(d);
+      const goal = settings().proteinGoal;
+      return cell(d, !t.p ? "" : !goal || t.p >= goal ? "on" : "half");
+    }),
     row("Medicin", (d) => cell(d, dayRec(d).meds ? "on" : "")),
     row("Steg", (d) => cell(d, (dayRec(d).steps || 0) >= STEP_GOAL ? "on" : (dayRec(d).steps || 0) > 0 ? "half" : "")),
     row("Träning", (d) => {
@@ -1270,6 +1545,18 @@ function viewSettings() {
        <button class="btn-small ghost" data-act="testPush" data-which="evening">Testa kväll</button></div>`
     ) +
     block(
+      "Mat",
+      `<div class="row">
+         <label class="field"><span>Kalorier per dag</span><input type="number" inputmode="numeric" min="0" step="50" data-change="kcalGoal" value="${esc(settings().kcalGoal || "")}" placeholder="t.ex. 2000" /></label>
+         <label class="field"><span>Protein per dag, gram</span><input type="number" inputmode="numeric" min="0" step="5" data-change="proteinGoal" value="${esc(settings().proteinGoal || "")}" placeholder="t.ex. 120" /></label>
+       </div>
+       <h3>Mina maträtter</h3>
+       <ul class="chores linked">${live("foods")
+         .sort((a, b) => a.name.localeCompare(b.name, "sv"))
+         .map((f) => `<li data-act="editFood" data-id="${f.id}"><span class="c-name">${esc(f.name)}<span class="c-meta">${f.per100 ? "per 100 g: " : "per portion: "}${macroLine(f)}</span></span></li>`)
+         .join("") || '<li class="empty">Inga sparade än.</li>'}</ul>`
+    ) +
+    block(
       "Google Kalender",
       `<p class="hint">Läses bara. Inget skrivs till Google.</p>
        <label class="field"><span>OAuth klient ID</span><input data-change="clientId" value="${esc(s.gcalClientId || "")}" placeholder="xxxx.apps.googleusercontent.com" /></label>
@@ -1290,7 +1577,19 @@ function viewSettings() {
 const sheet = () => $("#sheet");
 
 // Öppnar en meny eller ett formulär. Resolvar med knappens värde och fälten.
-function openSheet(title, fields, buttons) {
+// Stänger dialogen och väntar tills stängningshändelsen har körts klart,
+// så den inte råkar stänga eller avsluta nästa dialog som öppnas direkt.
+function closeSheet() {
+  const dlg = sheet();
+  if (!dlg.open) return Promise.resolve();
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => setTimeout(resolve, 0), { once: true });
+    dlg.close();
+  });
+}
+
+async function openSheet(title, fields, buttons) {
+  await closeSheet();
   const dlg = sheet();
   dlg.innerHTML = `<form method="dialog" class="sheet-form">
     ${title ? `<p class="sheet-title">${title}</p>` : ""}
@@ -1505,7 +1804,6 @@ async function handleMig(btn) {
   else if (kind === "tomorrow") moveEntry(e, { date: addDays(today(), 1) });
   else if (kind === "month") moveEntry(e, { month: addMonths(today().slice(0, 7), 1) });
   else if (kind === "pick") {
-    if (inSheet) sheet().close();
     const r = await openSheet("Flytta till dag", `<label class="field"><span>Datum</span><input type="date" name="date" value="${addDays(today(), 1)}" required /></label>`, [
       { value: "ok", label: "Flytta", cls: "btn-primary" },
       CLOSE
@@ -1584,6 +1882,34 @@ const actions = {
   editZone: (d) => zoneDialog(d.id),
   editBirthday: (d) => birthdayDialog(d.id),
   editHabit: (d) => habitDialog(d.id),
+  addFood: (d) => openFoodSearch(d.date, d.meal),
+  mealMenu: (d) => {
+    const m = get("meals", d.id);
+    foodCtx = { date: m.date, meal: m.meal };
+    const src = m.src || { per100: false, kcal: m.kcal, p: m.p, f: m.f, c: m.c };
+    portionDialog({ ...src, name: m.name, mine: true }, m);
+  },
+  editFood: async (d) => {
+    const f = get("foods", d.id);
+    const res = await openSheet(
+      "Min maträtt",
+      `<label class="field"><span>Namn</span><input name="name" value="${esc(f.name)}" required /></label>
+       <p class="hint">${f.per100 ? "Per 100 g" : "Per portion"}</p>
+       <div class="row">
+         <label class="field"><span>Kalorier</span><input name="kcal" type="number" inputmode="decimal" step="any" value="${f.kcal ?? ""}" /></label>
+         <label class="field"><span>Protein g</span><input name="p" type="number" inputmode="decimal" step="any" value="${f.p ?? ""}" /></label>
+       </div>
+       <div class="row">
+         <label class="field"><span>Fett g</span><input name="f" type="number" inputmode="decimal" step="any" value="${f.f ?? ""}" /></label>
+         <label class="field"><span>Kolhydrater g</span><input name="c" type="number" inputmode="decimal" step="any" value="${f.c ?? ""}" /></label>
+       </div>`,
+      [{ value: "ok", label: "Spara", cls: "btn-primary" }, { value: "delete", label: "Ta bort", cls: "danger", novalidate: true }, CLOSE]
+    );
+    const n = (k) => parseFloat(String(res.data[k] || 0).replace(",", ".")) || 0;
+    if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: n("kcal"), p: n("p"), f: n("f"), c: n("c") });
+    else if (res.action === "delete") remove("foods", f.id);
+    render();
+  },
   addSpecials: () => {
     addSpecials();
     toast("Städspecialerna är inlagda");
@@ -1598,6 +1924,7 @@ const actions = {
   enablePush: () => enablePush(),
   testPush: (d) => testPush(d.which),
   search: async () => {
+    await closeSheet();
     const dlg = sheet();
     dlg.innerHTML = `<form method="dialog" class="sheet-form search-sheet">
       <input type="search" id="global-search" placeholder="Sök i hela boken..." value="${esc(searchQuery)}" autocomplete="off" />
@@ -1649,6 +1976,15 @@ document.addEventListener("click", (ev) => {
     form.querySelectorAll(`[data-chip="${group}"]`).forEach((c) => c.classList.remove("on"));
     if (group === "type" || !wasOn) chip.classList.add("on");
     form.querySelector("input[name=text]").focus();
+    return;
+  }
+  const fp = ev.target.closest("[data-food-pick]");
+  if (fp) return pickFood({ ...foodResults[fp.dataset.foodPick] });
+  const fa = ev.target.closest("[data-food-act]");
+  if (fa) {
+    if (fa.dataset.foodAct === "scan") scanBarcode();
+    else if (fa.dataset.foodAct === "manual") manualFood();
+    else if (fa.dataset.foodAct === "code") lookupBarcode($("#scan-code").value);
     return;
   }
   const mig = ev.target.closest("[data-mig]");
@@ -1714,6 +2050,20 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("input", (ev) => {
   const el = ev.target;
+  if (el.id === "food-q") {
+    clearTimeout(foodTimer);
+    const q = el.value.trim();
+    if (q.length < 2) return;
+    foodTimer = setTimeout(() => runFoodSearch(q), 300);
+    return;
+  }
+  if (el.id === "portion-amount") {
+    const f = JSON.parse($("#portion-food").value);
+    const a = parseFloat(el.value.replace(",", ".")) || 0;
+    const k = f.per100 ? a / 100 : a;
+    $("#portion-preview").textContent = macroLine({ kcal: (f.kcal || 0) * k, p: (f.p || 0) * k, f: (f.f || 0) * k, c: (f.c || 0) * k });
+    return;
+  }
   if (el.id === "plan-input") {
     const prev = $("#plan-preview");
     if (!el.value.trim()) return (prev.textContent = "");
@@ -1753,6 +2103,7 @@ document.addEventListener("change", async (ev) => {
     saveLocal();
     return syncNow(true);
   } else if (c === "clientId") put("meta", { ...settings(), gcalClientId: el.value.trim() });
+  else if (c === "kcalGoal" || c === "proteinGoal") put("meta", { ...settings(), [c]: Math.max(0, parseInt(el.value, 10) || 0) || null });
   else if (c === "import") {
     try {
       const data = JSON.parse(await el.files[0].text());
