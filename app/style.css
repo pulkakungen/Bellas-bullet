@@ -218,7 +218,7 @@ button.sym:hover { background: var(--line); }
 .st-struck .e-text { color: var(--ink-faint); text-decoration: line-through; }
 .st-done .sym, .st-migrated .sym, .st-struck .sym { color: var(--ink-soft); }
 .ty-note .e-text { color: var(--ink-soft); }
-.gcal .e-text, .ty-birthday .e-text, .ty-holiday .e-text { cursor: default; }
+.ty-holiday .e-text { cursor: default; }
 .ty-birthday .sym { color: var(--accent); }
 .red { color: var(--accent) !important; }
 

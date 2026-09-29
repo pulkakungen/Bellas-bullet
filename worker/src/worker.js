@@ -292,10 +292,20 @@ function zoneForWeek(state, date) {
   return zones[((weeks % zones.length) + zones.length) % zones.length];
 }
 
+// Samma som appen: utan dolda händelser och med dubbletter ihopslagna.
 function gcalOn(state, date) {
   const cache = (state.meta || {}).gcal;
   const events = cache && Array.isArray(cache.events) ? cache.events : [];
-  return events.filter((e) => e.sd <= date && date <= e.ed);
+  const settings = (state.meta || {}).settings || {};
+  const keys = new Set(settings.gcalHiddenKeys || []);
+  const titles = new Set((settings.gcalHiddenTitles || []).map((t) => t.trim().toLowerCase()));
+  const seen = new Set();
+  return events.filter((e) => {
+    const title = String(e.t || "").trim().toLowerCase();
+    if (!(e.sd <= date && date <= e.ed) || keys.has(`${e.t}|${e.s}`) || titles.has(title) || seen.has(title)) return false;
+    seen.add(title);
+    return true;
+  });
 }
 
 function morningMessage(state, date) {

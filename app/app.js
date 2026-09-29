@@ -406,9 +406,25 @@ function zoneForWeek(date) {
 }
 const zoneKey = (zone, task) => `z:${zone.id}:${task}`;
 
+// Händelser från Google för en dag: utan det du dolt, och med dubbletter
+// (samma titel samma dag) ihopslagna, där den med klockslag vinner.
+const gcalKey = (e) => `${e.t}|${e.s}`;
+const normTitle = (t) => String(t || "").trim().toLowerCase();
 function gcalEventsOn(date) {
   const cache = get("meta", "gcal");
-  return cache && Array.isArray(cache.events) ? cache.events.filter((e) => e.sd <= date && date <= e.ed) : [];
+  if (!cache || !Array.isArray(cache.events)) return [];
+  const s = settings();
+  const hiddenKeys = new Set(s.gcalHiddenKeys || []);
+  const hiddenTitles = new Set((s.gcalHiddenTitles || []).map(normTitle));
+  const byTitle = new Map();
+  for (const e of cache.events) {
+    if (!(e.sd <= date && date <= e.ed)) continue;
+    if (hiddenKeys.has(gcalKey(e)) || hiddenTitles.has(normTitle(e.t))) continue;
+    const k = normTitle(e.t);
+    const prev = byTitle.get(k);
+    if (!prev || (prev.ad && !e.ad)) byTitle.set(k, e);
+  }
+  return [...byTitle.values()].sort((a, b) => (a.ad === b.ad ? a.s.localeCompare(b.s) : a.ad ? -1 : 1));
 }
 
 // Hur full är dagen? Styr hur många sysslor appen föreslår.
@@ -635,7 +651,7 @@ function entryRow(e, opts = {}) {
 function gcalRow(ev) {
   const time = ev.ad ? "" : `<span class="e-time">${ev.s.slice(11, 16)}</span>`;
   return `<li class="entry ty-event gcal"><span class="sig"></span><span class="sym static">${sym("event")}</span>
-    <span class="e-text">${time}${esc(ev.t)}<span class="e-from">Google</span></span></li>`;
+    <span class="e-text" data-act="gcalMenu" data-key="${esc(gcalKey(ev))}" data-title="${esc(ev.t)}">${time}${esc(ev.t)}<span class="e-from">Google</span></span></li>`;
 }
 
 function birthdayRow(b, date) {
@@ -1678,6 +1694,11 @@ function viewSettings() {
          .map((c) => `<li><label class="check-field"><input type="checkbox" data-change="gcalCal" data-id="${esc(c.id)}" ${chosenCalendars(gcal.calendars).includes(c.id) ? "checked" : ""} />
            <span class="cal-dot" style="background:${esc(c.color || "#999")}"></span>${esc(c.name)}${c.primary ? " <small>(huvudkalender)</small>" : ""}</label></li>`)
          .join("")}</ul>` : ""}
+       ${(settings().gcalHiddenTitles || []).length || (settings().gcalHiddenKeys || []).length
+         ? `<h3>Dolda i appen</h3><ul class="chores">${(settings().gcalHiddenTitles || [])
+             .map((t) => `<li><span class="c-name">Alla "${esc(t)}"</span><button class="plus-btn" data-act="gcalUnhide" data-kind="title" data-val="${esc(t)}">visa igen</button></li>`)
+             .join("")}${(settings().gcalHiddenKeys || []).length ? `<li><span class="c-name">${settings().gcalHiddenKeys.length} enstaka händelser</span><button class="plus-btn" data-act="gcalUnhide" data-kind="keys">visa igen</button></li>` : ""}</ul>`
+         : ""}
        <p class="hint">${gcal && gcal.fetchedAt ? `Senast hämtat ${new Date(gcal.fetchedAt).toLocaleString("sv-SE")}, ${gcal.events.length} händelser.` : "Inte hämtat än."}</p>`
     ) +
     block(
@@ -1999,6 +2020,25 @@ const actions = {
   editZone: (d) => zoneDialog(d.id),
   editBirthday: (d) => birthdayDialog(d.id),
   editHabit: (d) => habitDialog(d.id),
+  gcalMenu: async (d) => {
+    const res = await openSheet(esc(d.title), '<p class="hint">Från Google Kalender. Att dölja påverkar bara appen, inte din kalender.</p>', [
+      { value: "one", label: "Dölj den här" },
+      { value: "all", label: `Dölj alla som heter "${esc(d.title)}"` },
+      CLOSE
+    ]);
+    const s = settings();
+    if (res.action === "one") put("meta", { ...s, gcalHiddenKeys: [...new Set([...(s.gcalHiddenKeys || []), d.key])] });
+    else if (res.action === "all") put("meta", { ...s, gcalHiddenTitles: [...new Set([...(s.gcalHiddenTitles || []), d.title.trim()])] });
+    else return;
+    toast("Dold. Ta fram den igen under Inställningar.");
+    render();
+  },
+  gcalUnhide: (d) => {
+    const s = settings();
+    if (d.kind === "title") put("meta", { ...s, gcalHiddenTitles: (s.gcalHiddenTitles || []).filter((t) => t !== d.val) });
+    else put("meta", { ...s, gcalHiddenKeys: [] });
+    render();
+  },
   addSkincare: () => {
     if (!skincare()) put("meta", { id: "skincare", days: SKINCARE_PRESET });
     toast("Hudvårdsrutinen är inlagd");
@@ -2428,6 +2468,7 @@ async function gcalFetch() {
         const s = ev.start.dateTime || ev.start.date;
         const e = ev.end?.dateTime || ev.end?.date || s;
         events.push({
+          id: ev.id,
           c: cal.id,
           t: ev.summary || "(utan titel)",
           ad,
