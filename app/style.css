@@ -721,3 +721,7 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .wc-table td { padding: 5px 6px; border-bottom: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
 .wc-table a { text-decoration: none; }
 .wc-range .seg-btn.on { color: var(--paper); }
+
+/* ---------- Jobb ---------- */
+.work-tag { margin-left: 8px; font-family: "Karla", sans-serif; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--wc-trend) 16%, transparent); color: var(--ink-soft); vertical-align: 2px; }
+.chip.work-chip { width: auto; padding: 0 8px; font-size: 13px; }

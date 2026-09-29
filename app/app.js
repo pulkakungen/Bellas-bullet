@@ -266,7 +266,12 @@ function parseQuick(raw, preset) {
     else break;
     s = s.slice(m[0].length);
   }
-  return { type, sig, time, text: s.trim() };
+  let work = !!preset.work;
+  if (/(^|\s)#jobb\b/i.test(s)) {
+    work = true;
+    s = s.replace(/(^|\s)#jobb\b/gi, " ");
+  }
+  return { type, sig, time, work, text: s.replace(/\s+/g, " ").trim() };
 }
 
 // Kvällsplanering: "imorgon", "fre", "12/10", "2026-10-12", "nov", "v 42"
@@ -317,13 +322,14 @@ function addEntry(scope, raw, preset = {}) {
   if (!p.text) return;
   const e = { id: uid(), type: p.type, text: p.text, sig: p.sig, status: "open", order: Date.now(), ...scope };
   if (p.time) e.time = p.time;
+  if (p.work) e.work = true;
   put("entries", e);
   return e;
 }
 
 function moveEntry(e, target) {
   put("entries", { ...e, status: "migrated" });
-  const copy = { id: uid(), type: e.type, text: e.text, sig: e.sig, status: e.status === "started" ? "started" : "open", order: Date.now(), from: e.id, ...target };
+  const copy = { id: uid(), type: e.type, text: e.text, sig: e.sig, status: e.status === "started" ? "started" : "open", order: Date.now(), from: e.id, ...(e.work ? { work: true } : {}), ...target };
   if (target.date && e.time) copy.time = e.time;
   put("entries", copy);
   for (const child of childrenOf(e.id)) {
@@ -553,6 +559,7 @@ function render() {
     gratitude: () => viewGratitude(),
     weight: () => viewWeight(arg || "90"),
     kvall: () => viewEvening(),
+    jobb: () => viewWork(),
     index: () => viewIndex(),
     coll: () => viewCollection(arg),
     tracker: () => viewTracker(arg || t.slice(0, 7)),
@@ -660,7 +667,7 @@ function entryRow(e, opts = {}) {
   return `<li class="entry ty-${e.type} st-${e.status}">
     <span class="sig" title="${SIG_LABEL[e.sig] || ""}">${esc(e.sig || "")}</span>
     <button class="sym" data-act="cycle" data-id="${e.id}" aria-label="${TYPE_LABEL[e.type]}: ${STATUS_LABEL[e.status] || ""}">${entrySym(e)}</button>
-    <span class="e-text" data-act="entryMenu" data-id="${e.id}">${time}${esc(e.text)}${from}</span>
+    <span class="e-text" data-act="entryMenu" data-id="${e.id}">${time}${esc(e.text)}${e.work ? '<span class="work-tag">jobb</span>' : ""}${from}</span>
   </li>${opts.noChildren ? "" : childrenOf(e.id).map((c) => entryRow(c, { child: true })).join("")}`.replace('<li class="entry', `<li class="entry${opts.child ? " child" : ""}`);
 }
 
@@ -687,6 +694,8 @@ function logForm(scope, placeholder, defType = "task") {
       <button type="button" class="chip txt" data-chip="sig" data-val="!" title="Deadline">!</button>
       <button type="button" class="chip txt" data-chip="sig" data-val="*" title="Viktigt">*</button>
       <button type="button" class="chip txt" data-chip="sig" data-val="?" title="Kolla upp">?</button>
+      <span class="chip-sep"></span>
+      <button type="button" class="chip txt work-chip" data-chip="work" data-val="1" title="Jobb">jobb</button>
     </div>
     <div class="log-input-row">
       <input name="text" type="text" placeholder="${placeholder}" enterkeyhint="done" />
@@ -720,6 +729,11 @@ function viewDay(date) {
     <a class="nav-arrow" href="#${nextPage("day", date)}" aria-label="Nästa sida">›</a>
   </header>`;
 
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const openW = date === t && isWorkday(t) && nowMin >= workEndMinutes(t) ? openWork(t).length : 0;
+  if (openW) {
+    html += `<div class="banner"><span>Jobbdagen är slut. ${openW} öppna jobbuppgifter.</span><a class="btn-small" href="#jobb">Avsluta jobbdagen</a></div>`;
+  }
   if (date === t && new Date().getHours() >= 18) {
     html += `<div class="banner"><span>Dags att runda av dagen.</span><a class="btn-small" href="#kvall">Kvällsgenomgång</a></div>`;
   } else if (backlog.length) {
@@ -1521,6 +1535,7 @@ function viewIndex() {
     block(
       "Uppslag",
       `<ul class="index-list">
+        <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length || ""}</span></li>
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
         <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${live("entries").filter((e) => e.coll === "c-braindump").length}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>3</span></li>
@@ -1749,6 +1764,55 @@ document.addEventListener("pointerleave", (ev) => {
   }
 }, true);
 
+/* ---------------- Jobbdagen ---------------- */
+
+// Arbetsdag: måndag till fredag som inte är röd dag.
+const isWorkday = (date) => {
+  const wd = parseYmd(date).getDay();
+  return wd >= 1 && wd <= 5 && !holidaysOn(date).some((h) => h.red);
+};
+function nextWorkday(date) {
+  let d = addDays(date, 1);
+  while (!isWorkday(d)) d = addDays(d, 1);
+  return d;
+}
+// Sluttid från arbetstiden, t.ex. "8-17.30" eller "9–15", annars 16:30.
+function workEndMinutes(date) {
+  const w = dayRec(date).work || "";
+  const times = [...w.matchAll(/(\d{1,2})(?:[:.](\d{2}))?/g)].map((m) => +m[1] * 60 + (+m[2] || 0)).filter((m) => m <= 24 * 60);
+  return times.length >= 2 ? times[times.length - 1] : 16 * 60 + 30;
+}
+const openWork = (upto) =>
+  entriesWhere((e) => e.work && !e.parent && e.type === "task" && (e.status === "open" || e.status === "started") && e.date && e.date <= upto);
+
+function viewWork() {
+  const t = today();
+  const next = nextWorkday(t);
+  const open = openWork(t);
+  const doneToday = entriesWhere((e) => e.work && e.date === t && e.status === "done");
+  const nextLabel = `${WD_LONG[parseYmd(next).getDay()]} ${niceDate(next)}`;
+  const row = (e) => `<li><span class="sig">${esc(e.sig || "")}</span><span class="sym static">${entrySym(e)}</span>
+    <span class="txt">${esc(e.text)}${e.date < t ? `<span class="e-from">${niceDate(e.date)}</span>` : ""}</span>
+    <span class="mig-actions">
+      <button type="button" class="btn-small" data-mig="workday" data-id="${e.id}">${WD[parseYmd(next).getDay()]} ${+next.slice(8)}/${+next.slice(5, 7)}</button>
+      <button type="button" class="btn-small ghost" data-mig="pick" data-id="${e.id}">Välj dag</button>
+      <button type="button" class="btn-small ghost" data-mig="struck" data-id="${e.id}" aria-label="Stryk">${sym("struck")}</button>
+    </span></li>`;
+  const planned = entriesWhere((e) => e.work && e.date === next && !e.parent);
+  return (
+    head("Jobbdagen", "Avslut", null, null, `<div class="eyebrow">${doneToday.length} klara idag · ${open.length} öppna</div>`) +
+    block(
+      "Öppna jobbuppgifter",
+      open.length ? `<ul class="migrate-list">${open.map(row).join("")}</ul>` : '<p class="hint">Inga öppna jobbuppgifter. Bra jobbat, stäng datorn.</p>'
+    ) +
+    block(
+      `Till ${nextLabel}`,
+      list(planned.map((e) => entryRow(e)), "Inget planerat än.") +
+        `<form class="log-input-row" data-form="workNext" autocomplete="off"><input name="text" placeholder="Ny jobbuppgift..." /><button class="btn-small">+</button></form>`
+    )
+  );
+}
+
 /* ---------------- Tacksamhet ---------------- */
 
 function viewGratitude() {
@@ -1956,10 +2020,11 @@ function viewSettings() {
     ) +
     block(
       "Notiser",
-      `<p class="hint">06:30 morgonsammanfattning med deadlines och födelsedagar, 20:30 migrering. Kräver synknyckel.</p>
+      `<p class="hint">06:30 morgonsammanfattning, vid arbetsdagens slut (från arbetstiden, annars 16:30) om du har öppna jobbuppgifter, och 20:30 kvällsgenomgång. Kräver synknyckel.</p>
        <div class="btn-row"><button class="btn-small" data-act="enablePush">Slå på på den här enheten</button>
        <button class="btn-small ghost" data-act="testPush" data-which="morning">Testa morgon</button>
-       <button class="btn-small ghost" data-act="testPush" data-which="evening">Testa kväll</button></div>`
+       <button class="btn-small ghost" data-act="testPush" data-which="evening">Testa kväll</button>
+       <button class="btn-small ghost" data-act="testPush" data-which="work">Testa jobbslut</button></div>`
     ) +
     block(
       "Mat",
@@ -2053,6 +2118,7 @@ async function entryMenu(id) {
     { value: "tomorrow", label: `${sym("migrated")} Flytta till imorgon` },
     { value: "pickDate", label: `${sym("migrated")} Flytta till dag...` },
     { value: "pickMonth", label: `${sym("migrated")} Flytta till månad...` },
+    { value: "work", label: e.work ? "Inte jobb" : "Markera som jobb" },
     ...(e.parent ? [] : [{ value: "sub", label: "Lägg till delsteg" }]),
     { value: "edit", label: "Ändra" },
     { value: "delete", label: "Ta bort", cls: "danger" },
@@ -2092,6 +2158,8 @@ async function entryMenu(id) {
       if (e.date) next.time = r.data.time || undefined;
       put("entries", next);
     }
+  } else if (action === "work") {
+    put("entries", { ...e, work: !e.work });
   } else if (action === "sub") {
     const r = await openSheet("Delsteg till: " + esc(e.text), `<label class="field"><span>Delsteg</span><input name="text" required /></label>`, [
       { value: "ok", label: "Lägg till", cls: "btn-primary" },
@@ -2229,6 +2297,7 @@ async function handleMig(btn) {
   const kind = btn.dataset.mig;
   if (kind === "today") moveEntry(e, { date: today() });
   else if (kind === "tomorrow") moveEntry(e, { date: addDays(today(), 1) });
+  else if (kind === "workday") moveEntry(e, { date: nextWorkday(today()) });
   else if (kind === "month") moveEntry(e, { month: addMonths(today().slice(0, 7), 1) });
   else if (kind === "pick") {
     const r = await openSheet("Flytta till dag", `<label class="field"><span>Datum</span><input type="date" name="date" value="${addDays(today(), 1)}" required /></label>`, [
@@ -2494,7 +2563,8 @@ document.addEventListener("submit", (ev) => {
     for (const k of ["date", "month", "coll"]) if (form.dataset[k]) scope[k] = form.dataset[k];
     const preset = {
       type: form.querySelector('[data-chip="type"].on')?.dataset.val,
-      sig: form.querySelector('[data-chip="sig"].on')?.dataset.val
+      sig: form.querySelector('[data-chip="sig"].on')?.dataset.val,
+      work: !!form.querySelector('[data-chip="work"].on')
     };
     addEntry(scope, input.value, preset);
     const keep = form.closest("section")?.querySelector("h2")?.textContent;
@@ -2510,6 +2580,11 @@ document.addEventListener("submit", (ev) => {
     if (e) planned.unshift({ e, where: whereLabel(scope) });
     render();
     $("#plan-input")?.focus();
+  } else if (form.dataset.form === "workNext") {
+    ev.preventDefault();
+    addEntry({ date: nextWorkday(today()) }, form.text.value, { work: true });
+    render();
+    document.querySelector('form[data-form="workNext"] input')?.focus();
   } else if (form.dataset.form === "dayNote") {
     ev.preventDefault();
     addEntry({ date: today() }, form.text.value, { type: "note" });

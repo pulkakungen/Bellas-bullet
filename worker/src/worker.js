@@ -102,7 +102,11 @@ async function handleRequest(request, env, url) {
     const which = url.searchParams.get("which");
     const state = (await readState(env)) || {};
     const { dateStr } = stockholmParts(new Date());
-    const msg = which === "evening" ? eveningMessage(state, dateStr) : which === "morning" ? morningMessage(state, dateStr) : { title: "Bellas Bullet", body: "Testnotis. Allt fungerar." };
+    const msg =
+      which === "evening" ? eveningMessage(state, dateStr)
+      : which === "morning" ? morningMessage(state, dateStr)
+      : which === "work" ? workMessage(state, dateStr) || { title: "Jobbdagen är slut", body: "Inga öppna jobbuppgifter. Bra jobbat!", tag: "bullet-jobb" }
+      : { title: "Bellas Bullet", body: "Testnotis. Allt fungerar." };
     return json({ ok: await sendJournalPush(env, msg) });
   }
 
@@ -478,26 +482,49 @@ function eveningTasks(state, date) {
   };
 }
 
+// Jobbdagens slut: arbetstiden från dagens "arbetstid" (t.ex. "8-17.30"),
+// annars 16:30. Bara måndag till fredag och bara om det finns öppna jobbuppgifter.
+function workEndMinutes(state, date) {
+  const w = ((state.days || {})[date] || {}).work || "";
+  const times = [...w.matchAll(/(\d{1,2})(?:[:.](\d{2}))?/g)].map((m) => +m[1] * 60 + (+m[2] || 0)).filter((m) => m <= 24 * 60);
+  return times.length >= 2 ? times[times.length - 1] : 16 * 60 + 30;
+}
+
+function workMessage(state, date) {
+  const open = live(state.entries).filter(
+    (e) => e.work && !e.parent && e.type === "task" && (e.status === "open" || e.status === "started") && e.date && e.date <= date
+  );
+  if (!open.length) return null;
+  const names = open.slice(0, 3).map((e) => e.text).join(", ");
+  return {
+    title: "Jobbdagen är slut",
+    body: `${open.length} öppna jobbuppgifter: ${names}${open.length > 3 ? " med flera" : ""}. Flytta dem till nästa arbetsdag.`,
+    tag: "bullet-jobb"
+  };
+}
+
 async function runSchedule(env) {
   try {
     if (!(await env.BULLET_KV.get(SUB_KEY))) return;
     const { dateStr, minutesOfDay } = stockholmParts(new Date());
+    const state = (await readState(env)) || {};
+    const weekday = new Date(dateStr + "T12:00:00Z").getUTCDay();
     const slots = [
       { id: "morgon", at: MORNING_MIN, build: morningMessage },
-      { id: "kvall", at: EVENING_MIN, build: eveningMessage }
+      { id: "kvall", at: EVENING_MIN, build: eveningMessage },
+      ...(weekday >= 1 && weekday <= 5 ? [{ id: "jobb", at: workEndMinutes(state, dateStr), build: workMessage }] : [])
     ];
-    const slot = slots.find((s) => minutesOfDay >= s.at && minutesOfDay < s.at + 15);
-    if (!slot) return;
+    const due = slots.filter((s) => minutesOfDay >= s.at && minutesOfDay < s.at + 15);
+    if (!due.length) return;
 
     const sentKey = SENT_PREFIX + dateStr;
     const sent = JSON.parse((await env.BULLET_KV.get(sentKey)) || "[]");
-    if (sent.includes(slot.id)) return;
-
-    const state = (await readState(env)) || {};
-    if (await sendJournalPush(env, slot.build(state, dateStr))) {
-      sent.push(slot.id);
-      await env.BULLET_KV.put(sentKey, JSON.stringify(sent), { expirationTtl: 60 * 60 * 48 });
+    for (const slot of due) {
+      if (sent.includes(slot.id)) continue;
+      const msg = slot.build(state, dateStr);
+      if (!msg || (await sendJournalPush(env, msg))) sent.push(slot.id);
     }
+    await env.BULLET_KV.put(sentKey, JSON.stringify(sent), { expirationTtl: 60 * 60 * 48 });
   } catch (err) {
     console.error("journal schema kastade fel", err && err.stack);
   }

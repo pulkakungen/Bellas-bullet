@@ -37,7 +37,7 @@ self.addEventListener("push", (event) => {
   } catch (e) {
     if (event.data) data.body = event.data.text();
   }
-  const hash = data.tag === "bullet-kvall" ? "#kvall" : "#day";
+  const hash = data.tag === "bullet-kvall" ? "#kvall" : data.tag === "bullet-jobb" ? "#jobb" : "#day";
   event.waitUntil(
     self.registration.showNotification(data.title || "Bellas Bullet", {
       body: data.body,
