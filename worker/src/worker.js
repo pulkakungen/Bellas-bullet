@@ -251,8 +251,20 @@ function lastDone(state, id, before) {
   return last;
 }
 
+// Samma regler som i appen: aldrig gjorda sprids ut över intervallet,
+// dagliga räknas inte in i taket, och taket skiljer vardag och helg.
+function firstDue(r) {
+  const start = r.since || (r.u > 1 ? new Date(r.u).toISOString().slice(0, 10) : null);
+  if (!start || r.every <= 1) return start;
+  let h = 0;
+  for (const ch of r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return addDays(start, h % r.every);
+}
+
 function dueRoutines(state, date) {
   const weekday = new Date(date + "T12:00:00Z").getUTCDay();
+  const settings = (state.meta || {}).settings || {};
+  const cap = weekday === 0 || weekday === 6 ? settings.choresWeekend ?? 3 : settings.choresWeekday ?? 1;
   const out = [];
   for (const r of live(state.routines)) {
     if (doneOn(state, r.id, date)) continue;
@@ -260,11 +272,17 @@ function dueRoutines(state, date) {
       if (r.weekday === weekday) out.push({ name: r.name, score: 99 });
       continue;
     }
+    if (r.every <= 1) continue; // dagliga nämns inte i morgonnotisen
     const last = lastDone(state, r.id, date);
-    const since = last ? daysBetween(last, date) : Infinity;
-    if (since >= r.every) out.push({ name: r.name, score: last ? since / r.every : 50 });
+    if (!last) {
+      const first = firstDue(r);
+      if (!first || first <= date) out.push({ name: r.name, score: 1 });
+      continue;
+    }
+    const since = daysBetween(last, date);
+    if (since >= r.every) out.push({ name: r.name, score: since / r.every });
   }
-  return out.sort((a, b) => b.score - a.score).map((r) => r.name);
+  return out.sort((a, b) => b.score - a.score).slice(0, cap).map((r) => r.name);
 }
 
 function zoneForWeek(state, date) {

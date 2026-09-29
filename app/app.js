@@ -146,7 +146,7 @@ const missingSpecials = () =>
 
 function addSpecials() {
   STADSPECIALER.routines.forEach(([id, name, every]) => {
-    if (!get("routines", "r-" + id)) put("routines", { id: "r-" + id, name, cat: "hem", mode: "interval", every });
+    if (!get("routines", "r-" + id)) put("routines", { id: "r-" + id, name, cat: "hem", mode: "interval", every, since: today() });
   });
   const base = live("zones").length;
   STADSPECIALER.zones.forEach(([id, name, tasks], i) => {
@@ -338,11 +338,29 @@ function routineInfo(r, date) {
     return { r, done, due: parseYmd(date).getDay() === r.weekday, score: 99, label: WD_LONG[r.weekday] + "ar" };
   }
   const last = lastDone(r.id, done ? addDays(date, -1) : date);
-  const since = last ? daysBetween(last, date) : null;
-  const due = since === null || since >= r.every;
-  let label = last ? `senast för ${since} ${since === 1 ? "dag" : "dagar"} sedan` : "aldrig loggad";
-  if (since !== null && since > r.every) label += `, ${since - r.every} över`;
-  return { r, done, due, since, score: since === null ? 50 : since / r.every, label };
+  if (!last) {
+    // Aldrig gjord: sprid ut första gången över intervallet, räknat från när
+    // rutinen lades in, så inte allt blir förfallet samma dag.
+    const first = firstDue(r);
+    const wait = daysBetween(date, first);
+    const due = wait <= 0;
+    return { r, done, due, since: null, score: due ? 1 + -wait / r.every : 0, label: due ? "första gången" : `första gången om ${wait} ${wait === 1 ? "dag" : "dagar"}` };
+  }
+  const since = daysBetween(last, date);
+  const due = since >= r.every;
+  let label = `senast för ${since} ${since === 1 ? "dag" : "dagar"} sedan`;
+  if (since > r.every) label += `, ${since - r.every} över`;
+  return { r, done, due, since, score: since / r.every, label };
+}
+
+// Första dagen för en rutin som aldrig gjorts: startdagen plus en fast
+// förskjutning inom intervallet (samma på alla enheter, räknad från id:t).
+function firstDue(r) {
+  const start = r.since || (r.u > 1 ? ymd(new Date(r.u)) : today());
+  if (r.every <= 1) return start;
+  let h = 0;
+  for (const ch of r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return addDays(start, h % r.every);
 }
 
 function zoneForWeek(date) {
@@ -372,9 +390,18 @@ function busyMinutes(date) {
   min += entriesOn(date).filter((e) => (e.type === "meeting" || e.type === "event") && e.time).length * 60;
   return min;
 }
+// Tak för sysslor per dag: ditt tak för vardag eller helg, och lägre om
+// kalendern är full. Dagliga sysslor räknas inte in.
+const DEFAULT_CHORES = { weekday: 1, weekend: 3 };
+function choreCap(date) {
+  const wd = parseYmd(date).getDay();
+  const s = settings();
+  return wd === 0 || wd === 6 ? s.choresWeekend ?? DEFAULT_CHORES.weekend : s.choresWeekday ?? DEFAULT_CHORES.weekday;
+}
 function choreLimit(date) {
   const b = busyMinutes(date);
-  return b >= 360 ? 1 : b >= 180 ? 2 : b >= 60 ? 3 : 5;
+  const byCalendar = b >= 360 ? 0 : b >= 180 ? 1 : b >= 60 ? 2 : 5;
+  return Math.min(choreCap(date), byCalendar);
 }
 
 const workoutsIn = (from, to) => live("workouts").filter((w) => w.date >= from && w.date <= to);
@@ -659,11 +686,13 @@ function viewDay(date) {
 
 function choresBlock(date) {
   const infos = live("routines").map((r) => routineInfo(r, date));
-  const due = infos.filter((i) => i.due && !i.done).sort((a, b) => b.score - a.score);
+  const isDaily = (i) => i.r.mode !== "weekday" && i.r.every <= 1;
+  const daily = infos.filter((i) => isDaily(i) && !i.done);
+  const due = infos.filter((i) => !isDaily(i) && i.due && !i.done).sort((a, b) => b.score - a.score);
   const doneToday = infos.filter((i) => i.done);
   const limit = choreLimit(date);
-  const shown = showAllChores ? due : due.slice(0, limit);
-  const hidden = due.length - shown.length;
+  const shown = [...daily, ...(showAllChores ? due : due.slice(0, limit))];
+  const hidden = due.length - Math.min(due.length, showAllChores ? due.length : limit);
 
   const row = (i) => `<li class="${i.done ? "is-done" : ""}">
       <button class="check" data-act="toggleRoutine" data-id="${i.r.id}" data-date="${date}" aria-label="Markera ${esc(i.r.name)}">${sym(i.done ? "done" : "open")}</button>
@@ -674,12 +703,17 @@ function choresBlock(date) {
   let body = "";
   const busy = busyMinutes(date);
   if (due.length) {
-    body += `<p class="hint">${busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : busy < 60 ? "Luft i kalendern idag, passa på." : "Lagom mycket idag."}</p>`;
+    const wknd = [0, 6].includes(parseYmd(date).getDay());
+    body += `<p class="hint">${limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
   }
   const none = !infos.length ? '<li class="empty">Inga rutiner än. Lägg till under <a href="#routines">Index → Rutiner</a>.</li>' : '<li class="empty">Inget förfallet. Hemmet mår bra.</li>';
   body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || none}</ul>`;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
+  else if (!due.length && infos.some((i) => !isDaily(i))) {
+    const next = infos.filter((i) => !isDaily(i) && !i.due && !i.done && i.r.mode !== "weekday").map((i) => ({ i, d: i.since === null ? daysBetween(date, firstDue(i.r)) : i.r.every - i.since })).sort((a, b) => a.d - b.d)[0];
+    if (next) body += `<p class="hint">Nästa: ${esc(next.i.r.name)} om ${next.d} ${next.d === 1 ? "dag" : "dagar"}.</p>`;
+  }
 
   const zone = zoneForWeek(date);
   if (zone) {
@@ -1487,6 +1521,14 @@ function viewRoutines() {
     block("Fasta veckodagar", `<ul class="chores linked">${infos.filter((i) => i.r.mode === "weekday").sort(byName).map(row).join("") || '<li class="empty">Inga än.</li>'}</ul>`) +
     `<button class="btn-primary" data-act="editRoutine">Ny rutin</button>` +
     block(
+      "Hur mycket per dag?",
+      `<p class="hint">Högst så här många sysslor föreslås per dag. Dagliga sysslor räknas inte, och en full kalender ger färre.</p>
+       <div class="row">
+         <label class="field"><span>Måndag till fredag</span><input type="number" inputmode="numeric" min="0" max="10" data-change="choresWeekday" value="${settings().choresWeekday ?? DEFAULT_CHORES.weekday}" /></label>
+         <label class="field"><span>Lördag och söndag</span><input type="number" inputmode="numeric" min="0" max="10" data-change="choresWeekend" value="${settings().choresWeekend ?? DEFAULT_CHORES.weekend}" /></label>
+       </div>`
+    ) +
+    block(
       "Dagliga vanor",
       `<p class="hint">Bockas av i dagvyn och syns i veckans och månadens tracker.</p>
        <ul class="chores linked">${live("habits")
@@ -1725,6 +1767,7 @@ async function routineDialog(id) {
   );
   if (res.action === "ok") {
     put("routines", {
+      since: today(),
       ...r,
       id: id || "r-" + uid(),
       name: res.data.name.trim(),
@@ -2122,6 +2165,7 @@ document.addEventListener("change", async (ev) => {
     }
     return render();
   }
+  else if (c === "choresWeekday" || c === "choresWeekend") put("meta", { ...settings(), [c]: Math.max(0, Math.min(10, parseInt(el.value, 10) || 0)) });
   else if (c === "kcalGoal" || c === "proteinGoal") put("meta", { ...settings(), [c]: Math.max(0, parseInt(el.value, 10) || 0) || null });
   else if (c === "import") {
     try {
