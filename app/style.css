@@ -670,3 +670,8 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .food-pick small { font-family: "Karla", sans-serif; font-size: 12px; color: var(--ink-soft); }
 .hint.error { color: var(--accent); }
 .scan-video { width: 100%; max-height: 40dvh; background: #000; border-radius: 8px; object-fit: cover; }
+
+.cal-choose { list-style: none; margin: 0 0 8px; padding: 0; }
+.cal-choose .check-field { margin: 4px 0; }
+.cal-choose small { color: var(--ink-soft); }
+.cal-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: 0 0 12px; }

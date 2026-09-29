@@ -1564,6 +1564,10 @@ function viewSettings() {
        <label class="field"><span>OAuth klient ID</span><input data-change="clientId" value="${esc(s.gcalClientId || DEFAULT_GCAL_CLIENT_ID)}" placeholder="xxxx.apps.googleusercontent.com" /></label>
        <div class="btn-row"><button class="btn-small" data-act="gcalConnect">${tokenOk ? "Hämta igen" : "Koppla och hämta"}</button>
        ${local.gToken ? '<button class="btn-small ghost" data-act="gcalDisconnect">Koppla från</button>' : ""}</div>
+       ${gcal && gcal.calendars ? `<h3>Vilka kalendrar ska synas?</h3><ul class="cal-choose">${gcal.calendars
+         .map((c) => `<li><label class="check-field"><input type="checkbox" data-change="gcalCal" data-id="${esc(c.id)}" ${chosenCalendars(gcal.calendars).includes(c.id) ? "checked" : ""} />
+           <span class="cal-dot" style="background:${esc(c.color || "#999")}"></span>${esc(c.name)}${c.primary ? " <small>(huvudkalender)</small>" : ""}</label></li>`)
+         .join("")}</ul>` : ""}
        <p class="hint">${gcal && gcal.fetchedAt ? `Senast hämtat ${new Date(gcal.fetchedAt).toLocaleString("sv-SE")}, ${gcal.events.length} händelser.` : "Inte hämtat än."}</p>`
     ) +
     block(
@@ -2105,6 +2109,19 @@ document.addEventListener("change", async (ev) => {
     saveLocal();
     return syncNow(true);
   } else if (c === "clientId") put("meta", { ...settings(), gcalClientId: el.value.trim() });
+  else if (c === "gcalCal") {
+    const g = get("meta", "gcal");
+    const cur = chosenCalendars(g.calendars).filter((id) => id !== el.dataset.id);
+    if (el.checked) cur.push(el.dataset.id);
+    put("meta", { ...settings(), gcalCals: cur });
+    // bortvalda försvinner direkt, tillvalda kräver en ny hämtning
+    put("meta", { ...g, events: g.events.filter((e) => !e.c || cur.includes(e.c)) });
+    if (el.checked) {
+      if (local.gToken && local.gTokenExp > Date.now() + 60000) gcalFetch();
+      else toast("Tryck Hämta igen för att hämta den kalendern");
+    }
+    return render();
+  }
   else if (c === "kcalGoal" || c === "proteinGoal") put("meta", { ...settings(), [c]: Math.max(0, parseInt(el.value, 10) || 0) || null });
   else if (c === "import") {
     try {
@@ -2237,6 +2254,12 @@ async function gcalConnect() {
   client.requestAccessToken({ prompt: local.gConnected ? "" : "consent" });
 }
 
+function chosenCalendars(calendars) {
+  const chosen = settings().gcalCals;
+  if (Array.isArray(chosen)) return chosen;
+  return calendars.filter((c) => c.primary).map((c) => c.id);
+}
+
 async function gcalFetch() {
   const auth = { headers: { Authorization: "Bearer " + local.gToken } };
   const api = "https://www.googleapis.com/calendar/v3";
@@ -2247,7 +2270,11 @@ async function gcalFetch() {
       saveLocal();
       return toast("Google-inloggningen har gått ut, tryck Hämta igen");
     }
-    const cals = ((await calRes.json()).items || []).filter((c) => c.selected);
+    const all = (await calRes.json()).items || [];
+    const calendars = all.map((c) => ({ id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary, color: c.backgroundColor || null }));
+    // Bara de kalendrar du valt i Inställningar. Utan val: bara din huvudkalender.
+    const chosen = chosenCalendars(calendars);
+    const cals = calendars.filter((c) => chosen.includes(c.id));
     const from = parseYmd(addDays(today(), -14)).toISOString();
     const to = parseYmd(addDays(today(), 120)).toISOString();
     const events = [];
@@ -2260,6 +2287,7 @@ async function gcalFetch() {
         const s = ev.start.dateTime || ev.start.date;
         const e = ev.end?.dateTime || ev.end?.date || s;
         events.push({
+          c: cal.id,
           t: ev.summary || "(utan titel)",
           ad,
           s: ad ? s : ymd(new Date(s)) + "T" + new Date(s).toTimeString().slice(0, 5),
@@ -2270,7 +2298,7 @@ async function gcalFetch() {
       }
     }
     events.sort((a, b) => a.s.localeCompare(b.s));
-    put("meta", { id: "gcal", events, fetchedAt: Date.now() });
+    put("meta", { id: "gcal", events, calendars, fetchedAt: Date.now() });
     toast(`Hämtade ${events.length} händelser`);
     render();
   } catch (e) {
