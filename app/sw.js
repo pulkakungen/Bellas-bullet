@@ -1,4 +1,4 @@
-const CACHE_NAME = "bullet-v1";
+const CACHE_NAME = "bullet-v2";
 const CORE_FILES = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -13,13 +13,14 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Nätverk först för appens egna filer, cachen är bara offline-reserv.
-// Anrop till workern och Google går alltid direkt.
+// Nätverk först för appens egna filer, och förbi webbläsarens HTTP-cache
+// (GitHub Pages låter filer ligga kvar i 10 minuter), så en ny version syns
+// direkt. Cachen här är bara offline-reserv. Workern och Google går direkt.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request.url, { cache: "no-cache", credentials: "same-origin" })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));

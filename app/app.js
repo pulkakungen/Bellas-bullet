@@ -2389,6 +2389,23 @@ setInterval(() => {
   }
 }, 60000);
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// Ny version av appen: service workern byts ut och sidan laddas om en gång.
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) {
+      reloaded = true;
+      location.reload();
+    }
+  });
+  navigator.serviceWorker
+    .register("sw.js", { updateViaCache: "none" })
+    .then((reg) => {
+      // leta efter ny version när appen öppnas igen
+      document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && reg.update().catch(() => {}));
+    })
+    .catch(() => {});
+}
 render();
 syncNow(false);
