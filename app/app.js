@@ -165,6 +165,30 @@ function addSpecials() {
   });
 }
 
+// Bellas hudvårdsrutin (kväll), en variant per veckodag. 0 = söndag.
+const BASE = ["Vitamin C Cleansing Balm", "Nivea Cleansing Cream Caring"];
+const EYES = ["The Ordinary Volufiline", "Biovène Hyaluronic Eye Filler", "Xlash Pro Eyelash Serum"];
+const LUMENE = "Lumene Nordic Hydra Aqua Lumenessence Beauty Lotion";
+const Q10 = "Cien Q10 Night Mask";
+const GLOW = "Lumene Nordic-C Glow Moisturizer";
+const SKINCARE_PRESET = {
+  1: [...BASE, LUMENE, "COSRX Snail 96 Mucin", ...EYES, Q10],
+  2: [...BASE, LUMENE, "Elizabeth Arden Ceramide Capsules Daily Youth", ...EYES, GLOW],
+  3: [...BASE, "The Ordinary Glycolic Acid 7%", "The Ordinary Niacinamide 10% + Zinc", ...EYES, Q10],
+  4: [...BASE, LUMENE, "The Ordinary Hyaluronic Acid 2% + B5", ...EYES, GLOW],
+  5: [...BASE, "Ikzee Kojic Acid & Turmeric Cleansing Pads", "Elizabeth Arden Ceramide Capsules Face & Eyes", ...EYES, Q10],
+  6: [...BASE, LUMENE, "COSRX Snail 96 Mucin", ...EYES, GLOW],
+  0: [...BASE, LUMENE, "Elizabeth Arden Ceramide Capsules Daily Youth", ...EYES, Q10]
+};
+const skincare = () => get("meta", "skincare");
+const skinStepsOn = (date) => (skincare()?.days?.[parseYmd(date).getDay()] || []);
+const skinKey = (step) => "sk:" + step;
+function skinStatus(date) {
+  const steps = skinStepsOn(date);
+  const done = steps.filter((st) => isDone(skinKey(st), date)).length;
+  return { steps, done, all: steps.length > 0 && done === steps.length };
+}
+
 /* ---------------- Hjälpare ---------------- */
 
 const esc = (s) =>
@@ -677,6 +701,20 @@ function viewDay(date) {
   html += block("Logg", list(entries.map((e) => entryRow(e)), "Tomt blad. Skriv nedan.") + logForm({ date }, "Skriv... (o event, m möte, . notering)"));
 
   const habits = live("habits").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const skin = skinStatus(date);
+  if (skin.steps.length) {
+    html += block(
+      "Hudvård",
+      `<p class="hint">${WD_LONG[d.getDay()]}skväll · ${skin.all ? "klart för ikväll" : `${skin.done} av ${skin.steps.length} steg`}</p>
+       <ol class="skin-steps">${skin.steps
+         .map((st) => {
+           const on = isDone(skinKey(st), date);
+           return `<li class="${on ? "is-done" : ""}"><button class="check" data-act="toggleSkin" data-step="${esc(st)}" data-date="${date}" aria-label="Markera ${esc(st)}">${sym(on ? "done" : "open")}</button><span class="c-name">${esc(st)}</span></li>`;
+         })
+         .join("")}</ol>
+       ${skin.all ? "" : `<button class="link-btn left" data-act="skinAll" data-date="${date}">bocka alla</button>`}`
+    );
+  }
   if (habits.length) {
     html += block(
       "Vanor",
@@ -1492,6 +1530,10 @@ function viewTracker(ym) {
     }),
     row("Sömn 7h+", (d) => cell(d, (dayRec(d).sleep || 0) >= 7 ? "on" : dayRec(d).sleep ? "half" : "", dayRec(d).sleep ? Math.round(dayRec(d).sleep) : "")),
     row("Tacksamhet", (d) => cell(d, dayRec(d).grateful ? "on" : "")),
+    ...(skincare() ? [row("Hudvård", (d) => {
+      const st = skinStatus(d);
+      return cell(d, st.all ? "on mig" : st.done ? "half" : "");
+    })] : []),
     ...live("habits")
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((h) => row(esc(h.name), (d) => cell(d, isDone(h.id, d) ? "on mig" : "", "", `data-act="toggleHabit" data-id="${h.id}" data-date="${d}"`)))
@@ -1541,6 +1583,19 @@ function viewRoutines() {
          <label class="field"><span>Lördag och söndag</span><input type="number" inputmode="numeric" min="0" max="10" data-change="choresWeekend" value="${settings().choresWeekend ?? DEFAULT_CHORES.weekend}" /></label>
        </div>`
     ) +
+    (skincare()
+      ? block(
+          "Hudvård, kväll",
+          `<p class="hint">Tryck på en dag för att ändra stegen.</p>
+           <ul class="chores linked">${[1, 2, 3, 4, 5, 6, 0]
+             .map((wd) => {
+               const steps = skincare().days?.[wd] || [];
+               const special = steps.filter((st) => !BASE.includes(st) && !EYES.includes(st));
+               return `<li data-act="editSkin" data-wd="${wd}"><span class="c-name">${WD_LONG[wd]}<span class="c-meta">${esc(special.join(", ") || steps.length + " steg")}</span></span></li>`;
+             })
+             .join("")}</ul>`
+        )
+      : `<div class="banner"><span>Din hudvårdsrutin för kvällen, en variant per veckodag.</span><button class="btn-small" data-act="addSkincare">Lägg in hudvård</button></div>`) +
     block(
       "Dagliga vanor",
       `<p class="hint">Bockas av i dagvyn och syns i veckans och månadens tracker.</p>
@@ -1944,6 +1999,35 @@ const actions = {
   editZone: (d) => zoneDialog(d.id),
   editBirthday: (d) => birthdayDialog(d.id),
   editHabit: (d) => habitDialog(d.id),
+  addSkincare: () => {
+    if (!skincare()) put("meta", { id: "skincare", days: SKINCARE_PRESET });
+    toast("Hudvårdsrutinen är inlagd");
+    render();
+  },
+  toggleSkin: (d) => {
+    const k = skinKey(d.step);
+    setDone(k, d.date, !isDone(k, d.date));
+    if (skinStatus(d.date).all) toast("Hudvården klar för ikväll");
+    render();
+  },
+  skinAll: (d) => {
+    skinStepsOn(d.date).forEach((st) => isDone(skinKey(st), d.date) || setDone(skinKey(st), d.date, true));
+    render();
+  },
+  editSkin: async (d) => {
+    const wd = +d.wd;
+    const sc = skincare();
+    const res = await openSheet(
+      "Hudvård " + WD_LONG[wd],
+      `<label class="field"><span>Ett steg per rad, i ordning</span><textarea name="steps" rows="9">${esc((sc.days?.[wd] || []).join("\n"))}</textarea></label>`,
+      [{ value: "ok", label: "Spara", cls: "btn-primary" }, CLOSE]
+    );
+    if (res.action === "ok") {
+      const steps = res.data.steps.split("\n").map((x) => x.trim()).filter(Boolean);
+      put("meta", { ...sc, days: { ...sc.days, [wd]: steps } });
+    }
+    render();
+  },
   addFood: (d) => openFoodSearch(d.date, d.meal),
   mealMenu: (d) => {
     const m = get("meals", d.id);

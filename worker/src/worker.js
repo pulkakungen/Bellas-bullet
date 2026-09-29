@@ -329,7 +329,21 @@ function morningMessage(state, date) {
   return { title: "God morgon", body: lines.join("\n") || "Ett tomt blad idag. Vad vill du hinna med?", tag: "bullet-morgon" };
 }
 
+// Hudvården för kvällen: hur många steg som återstår.
+function skinLeft(state, date) {
+  const sc = (state.meta || {}).skincare;
+  const steps = (sc && sc.days && sc.days[new Date(date + "T12:00:00Z").getUTCDay()]) || [];
+  return steps.filter((st) => !doneOn(state, "sk:" + st, date)).length;
+}
+
 function eveningMessage(state, date) {
+  const msg = eveningTasks(state, date);
+  const left = skinLeft(state, date);
+  if (left) msg.body += `\nHudvård: ${left} steg kvar ikväll.`;
+  return msg;
+}
+
+function eveningTasks(state, date) {
   const open = live(state.entries).filter(
     (e) => e.type === "task" && e.date && e.date <= date && (e.status === "open" || e.status === "started")
   );
