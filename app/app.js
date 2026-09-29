@@ -417,8 +417,9 @@ const zoneKey = (zone, task) => `z:${zone.id}:${task}`;
 const gcalKey = (e) => `${e.t}|${e.s}`;
 const normTitle = (t) => String(t || "").trim().toLowerCase();
 function gcalEventsOn(date) {
-  const cache = get("meta", "gcal");
-  if (!cache || !Array.isArray(cache.events)) return [];
+  const all = [...(get("meta", "gcal")?.events || []), ...(get("meta", "wcal")?.events || [])];
+  if (!all.length) return [];
+  const cache = { events: all };
   const s = settings();
   const hiddenKeys = new Set(s.gcalHiddenKeys || []);
   const hiddenTitles = new Set((s.gcalHiddenTitles || []).map(normTitle));
@@ -674,7 +675,7 @@ function entryRow(e, opts = {}) {
 function gcalRow(ev) {
   const time = ev.ad ? "" : `<span class="e-time">${ev.s.slice(11, 16)}</span>`;
   return `<li class="entry ty-event gcal"><span class="sig"></span><span class="sym static">${sym("event")}</span>
-    <span class="e-text" data-act="gcalMenu" data-key="${esc(gcalKey(ev))}" data-title="${esc(ev.t)}">${time}${esc(ev.t)}<span class="e-from">Google</span></span></li>`;
+    <span class="e-text" data-act="gcalMenu" data-key="${esc(gcalKey(ev))}" data-title="${esc(ev.t)}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
 }
 
 function birthdayRow(b, date) {
@@ -1788,27 +1789,58 @@ const openWork = (upto) =>
 function viewWork() {
   const t = today();
   const next = nextWorkday(t);
+  const r = dayRec(t);
   const open = openWork(t);
-  const doneToday = entriesWhere((e) => e.work && e.date === t && e.status === "done");
+  const doneToday = entriesWhere((e) => e.work && e.date === t && e.status === "done" && !e.parent);
+  const nowHM = `${pad(new Date().getHours())}:${pad(new Date().getMinutes())}`;
+  const meetingsToday = (get("meta", "wcal")?.events || []).filter((e) => e.sd === t && !e.ad && e.s.slice(11) <= nowHM);
   const nextLabel = `${WD_LONG[parseYmd(next).getDay()]} ${niceDate(next)}`;
+  const nextShort = `${WD[parseYmd(next).getDay()]} ${+next.slice(8)}/${+next.slice(5, 7)}`;
   const row = (e) => `<li><span class="sig">${esc(e.sig || "")}</span><span class="sym static">${entrySym(e)}</span>
     <span class="txt">${esc(e.text)}${e.date < t ? `<span class="e-from">${niceDate(e.date)}</span>` : ""}</span>
     <span class="mig-actions">
-      <button type="button" class="btn-small" data-mig="workday" data-id="${e.id}">${WD[parseYmd(next).getDay()]} ${+next.slice(8)}/${+next.slice(5, 7)}</button>
+      <button type="button" class="btn-small" data-mig="workday" data-id="${e.id}">${nextShort}</button>
       <button type="button" class="btn-small ghost" data-mig="pick" data-id="${e.id}">Välj dag</button>
       <button type="button" class="btn-small ghost" data-mig="struck" data-id="${e.id}" aria-label="Stryk">${sym("struck")}</button>
     </span></li>`;
   const planned = entriesWhere((e) => e.work && e.date === next && !e.parent);
+  const important = planned.filter((e) => e.sig === "*").length;
+  const plannedRows = planned.map(
+    (e) => `<li class="entry ty-${e.type} st-${e.status}"><span class="sig">${esc(e.sig || "")}</span><span class="sym static">${entrySym(e)}</span>
+      <span class="e-text">${e.time ? `<span class="e-time">${e.time}</span>` : ""}${esc(e.text)}</span>
+      <button class="plus-btn top-btn ${e.sig === "*" ? "on" : ""}" data-act="toggleTop" data-id="${e.id}">${e.sig === "*" ? "★ topp" : "☆ topp"}</button></li>`
+  );
+  const nextMeetings = gcalEventsOn(next).filter((e) => e.src === "outlook").map(gcalRow);
+  const scale5 = (field, val, labels) => `<div class="scale">${[1, 2, 3, 4, 5]
+    .map((n) => `<button class="scale-dot lv${6 - n} ${val === n ? "on" : ""}" data-act="setScale" data-field="${field}" data-val="${n}" data-date="${t}" title="${labels[n - 1]}">${n}</button>`)
+    .join("")}</div>`;
   return (
-    head("Jobbdagen", "Avslut", null, null, `<div class="eyebrow">${doneToday.length} klara idag · ${open.length} öppna</div>`) +
+    head("Jobbdagen", "Avslut", null, null, `<div class="eyebrow">${WD_LONG[parseYmd(t).getDay()]} ${niceDate(t)}</div>`) +
     block(
-      "Öppna jobbuppgifter",
-      open.length ? `<ul class="migrate-list">${open.map(row).join("")}</ul>` : '<p class="hint">Inga öppna jobbuppgifter. Bra jobbat, stäng datorn.</p>'
+      "1. Hur gick jobbdagen?",
+      `<div class="well-row"><span>Stress</span>${scale5("workStress", r.workStress, ["Lugnt", "Lagom", "Mycket", "Stressigt", "För mycket"])}</div>
+       <label class="field"><span>En rad om dagen</span><textarea rows="2" data-change="workNote" data-date="${t}" placeholder="Vad gick bra, vad tog energi?">${esc(r.workNote || "")}</textarea></label>`
     ) +
     block(
-      `Till ${nextLabel}`,
-      list(planned.map((e) => entryRow(e)), "Inget planerat än.") +
-        `<form class="log-input-row" data-form="workNext" autocomplete="off"><input name="text" placeholder="Ny jobbuppgift..." /><button class="btn-small">+</button></form>`
+      "2. Klart idag",
+      doneToday.length || meetingsToday.length
+        ? `<ul class="log">${doneToday.map((e) => entryRow(e, { noChildren: true })).join("")}${meetingsToday.map(gcalRow).join("")}</ul>`
+        : '<p class="hint">Inget avbockat än. Bocka av det du hunnit i loggen, eller här nedanför.</p>'
+    ) +
+    block(
+      "3. Öppna uppgifter",
+      open.length ? `<p class="hint">Flytta till nästa arbetsdag, välj en dag, eller stryk det som inte behövs längre.</p><ul class="migrate-list">${open.map(row).join("")}</ul>` : '<p class="hint">Inga öppna jobbuppgifter.</p>'
+    ) +
+    block(
+      `4. Planera ${nextLabel}`,
+      `<p class="hint">Markera högst tre som viktigast (★). ${important ? `${important} av 3 valda.` : ""}</p>
+       <ul class="log">${plannedRows.join("") || '<li class="empty">Inget planerat än.</li>'}</ul>
+       <form class="log-input-row" data-form="workNext" autocomplete="off"><input name="text" placeholder="Ny jobbuppgift, t.ex. 09:00 m Avstämning" /><button class="btn-small">+</button></form>`
+    ) +
+    block(
+      `5. ${nextLabel.charAt(0).toUpperCase() + nextLabel.slice(1)}`,
+      (nextMeetings.length ? `<ul class="log">${nextMeetings.join("")}</ul>` : `<p class="hint">${settings().workIcs ? "Inga möten i jobbkalendern." : 'Koppla jobbkalendern under <a href="#settings">Inställningar</a> för att se mötena här.'}</p>`) +
+        `<a class="btn-primary" href="#day/${next}">Öppna ${WD_LONG[parseYmd(next).getDay()]}</a>`
     )
   );
 }
@@ -2037,6 +2069,13 @@ function viewSettings() {
          .sort((a, b) => a.name.localeCompare(b.name, "sv"))
          .map((f) => `<li data-act="editFood" data-id="${f.id}"><span class="c-name">${esc(f.name)}<span class="c-meta">${f.per100 ? "per 100 g: " : "per portion: "}${macroLine(f)}</span></span></li>`)
          .join("") || '<li class="empty">Inga sparade än.</li>'}</ul>`
+    ) +
+    block(
+      "Jobbkalender (Outlook)",
+      `<p class="hint">Läses bara. I Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender → välj kalendern och "Kan visa all information" → Publicera → kopiera <b>ICS</b>-länken hit.</p>
+       <label class="field"><span>ICS-länk</span><input data-change="workIcs" value="${esc(settings().workIcs || "")}" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" autocomplete="off" /></label>
+       <div class="btn-row"><button class="btn-small" data-act="wcalFetch">Hämta jobbkalendern</button></div>
+       <p class="hint">${get("meta", "wcal")?.fetchedAt ? `Senast hämtat ${new Date(get("meta", "wcal").fetchedAt).toLocaleString("sv-SE")}, ${get("meta", "wcal").events.length} möten.` : "Inte hämtad än."}</p>`
     ) +
     block(
       "Google Kalender",
@@ -2412,6 +2451,14 @@ const actions = {
     toast("Hudvårdsrutinen är inlagd");
     render();
   },
+  toggleTop: (d) => {
+    const e = get("entries", d.id);
+    const on = e.sig === "*";
+    const count = entriesWhere((x) => x.work && x.date === e.date && x.sig === "*").length;
+    if (!on && count >= 3) return toast("Redan tre viktigaste. Ta bort en stjärna först.");
+    put("entries", { ...e, sig: on ? "" : "*" });
+    render();
+  },
   toggleSkin: (d) => {
     const k = skinKey(d.step);
     setDone(k, d.date, !isDone(k, d.date));
@@ -2504,6 +2551,7 @@ const actions = {
     }
   },
   gcalConnect: () => gcalConnect(),
+  wcalFetch: () => wcalFetch(true),
   gcalDisconnect: () => {
     if (local.gToken && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(local.gToken, () => {});
     delete local.gToken;
@@ -2652,6 +2700,7 @@ document.addEventListener("change", async (ev) => {
   if (c === "steps") setDay(el.dataset.date, { steps: Math.max(0, parseInt(el.value, 10) || 0) });
   else if (c === "grateful") setDay(el.dataset.date, { grateful: el.value.trim() });
   else if (c === "work") setDay(el.dataset.date, { work: el.value.trim() });
+  else if (c === "workNote") setDay(el.dataset.date, { workNote: el.value.trim() });
   else if (c === "weight") {
     const kg = parseFloat(el.value.replace(",", "."));
     setDay(el.dataset.date, { weight: Number.isFinite(kg) && kg > 0 ? Math.round(kg * 10) / 10 : null });
@@ -2686,6 +2735,10 @@ document.addEventListener("change", async (ev) => {
     return render();
   }
   else if (c === "choresWeekday" || c === "choresWeekend") put("meta", { ...settings(), [c]: Math.max(0, Math.min(10, parseInt(el.value, 10) || 0)) });
+  else if (c === "workIcs") {
+    put("meta", { ...settings(), workIcs: el.value.trim().replace(/^webcal:/i, "https:") });
+    return wcalFetch(true);
+  }
   else if (c === "kcalGoal" || c === "proteinGoal") put("meta", { ...settings(), [c]: Math.max(0, parseInt(el.value, 10) || 0) || null });
   else if (c === "import") {
     try {
@@ -2871,6 +2924,166 @@ async function gcalFetch() {
   }
 }
 
+/* ---------------- Jobbkalender (ICS från Outlook) ---------------- */
+// Outlook publicerar kalendern som en ICS-länk. Workern hämtar den (CORS),
+// här tolkas den: enstaka möten, återkommande (RRULE), undantag (EXDATE)
+// och flyttade tillfällen (RECURRENCE-ID). Tider med TZID räknas som
+// svensk lokal tid, tider med Z omvandlas från UTC.
+
+function icsLines(text) {
+  return text.replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+}
+
+function icsProp(line) {
+  const i = line.indexOf(":");
+  if (i < 0) return null;
+  const [name, ...params] = line.slice(0, i).split(";");
+  const p = {};
+  for (const x of params) {
+    const [k, v] = x.split("=");
+    p[k.toUpperCase()] = (v || "").replace(/^"|"$/g, "");
+  }
+  return { name: name.toUpperCase(), params: p, value: line.slice(i + 1) };
+}
+
+// Returnerar { date: "YYYY-MM-DD", time: "HH:MM" | null } i lokal tid.
+function icsTime(prop) {
+  const v = prop.value.trim();
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/);
+  if (!m) return null;
+  if (!m[4] || prop.params.VALUE === "DATE") return { date: `${m[1]}-${m[2]}-${m[3]}`, time: null };
+  if (m[7]) {
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+    return { date: ymd(d), time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+  }
+  return { date: `${m[1]}-${m[2]}-${m[3]}`, time: `${m[4]}:${m[5]}` };
+}
+
+const unescapeIcs = (s) => s.replace(/\\n/gi, " ").replace(/\\([,;\\])/g, "$1").trim();
+const ICS_DAYS = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+function parseIcs(text) {
+  const out = [];
+  let cur = null;
+  for (const line of icsLines(text)) {
+    if (line === "BEGIN:VEVENT") cur = { exdates: new Set() };
+    else if (line === "END:VEVENT") {
+      if (cur && cur.start) out.push(cur);
+      cur = null;
+    } else if (cur) {
+      const p = icsProp(line);
+      if (!p) continue;
+      if (p.name === "SUMMARY") cur.title = unescapeIcs(p.value);
+      else if (p.name === "UID") cur.uid = p.value;
+      else if (p.name === "DTSTART") cur.start = icsTime(p);
+      else if (p.name === "DTEND") cur.end = icsTime(p);
+      else if (p.name === "RRULE") cur.rrule = Object.fromEntries(p.value.split(";").map((kv) => kv.split("=")));
+      else if (p.name === "EXDATE") p.value.split(",").forEach((v) => { const t = icsTime({ ...p, value: v }); if (t) cur.exdates.add(t.date); });
+      else if (p.name === "RECURRENCE-ID") cur.recurrenceId = icsTime(p);
+      else if (p.name === "STATUS") cur.cancelled = p.value.toUpperCase() === "CANCELLED";
+    }
+  }
+  return out;
+}
+
+// Stämmer datumet d med regeln? (utan COUNT/UNTIL, de hanteras i loopen)
+function rruleHits(rule, start, d) {
+  const interval = +(rule.INTERVAL || 1);
+  const sd = parseYmd(start);
+  const dd = parseYmd(d);
+  const byday = rule.BYDAY ? rule.BYDAY.split(",") : null;
+  switch (rule.FREQ) {
+    case "DAILY":
+      return daysBetween(start, d) % interval === 0 && (!byday || byday.some((b) => ICS_DAYS[b.slice(-2)] === dd.getDay()));
+    case "WEEKLY": {
+      const weeks = Math.round(daysBetween(weekStart(start), weekStart(d)) / 7);
+      const days = byday ? byday.map((b) => ICS_DAYS[b.slice(-2)]) : [sd.getDay()];
+      return weeks % interval === 0 && days.includes(dd.getDay());
+    }
+    case "MONTHLY": {
+      const months = (dd.getFullYear() - sd.getFullYear()) * 12 + dd.getMonth() - sd.getMonth();
+      if (months % interval) return false;
+      if (rule.BYMONTHDAY) return rule.BYMONTHDAY.split(",").map(Number).includes(dd.getDate());
+      if (byday) {
+        return byday.some((b) => {
+          const n = parseInt(b, 10);
+          if (ICS_DAYS[b.slice(-2)] !== dd.getDay()) return false;
+          if (!n) return true;
+          const nth = Math.ceil(dd.getDate() / 7);
+          const last = dd.getDate() + 7 > daysInMonth(d.slice(0, 7));
+          return n > 0 ? nth === n : n === -1 && last;
+        });
+      }
+      return dd.getDate() === sd.getDate();
+    }
+    case "YEARLY":
+      return (dd.getFullYear() - sd.getFullYear()) % interval === 0 && dd.getMonth() === sd.getMonth() && dd.getDate() === sd.getDate();
+  }
+  return false;
+}
+
+// Alla tillfällen inom [from, to] som samma form som Google-händelserna.
+function expandIcs(events, from, to) {
+  const moved = new Map(); // uid -> datum som flyttats (RECURRENCE-ID)
+  for (const ev of events) if (ev.recurrenceId && ev.uid) {
+    if (!moved.has(ev.uid)) moved.set(ev.uid, new Set());
+    moved.get(ev.uid).add(ev.recurrenceId.date);
+  }
+  const res = [];
+  const push = (ev, date) => {
+    const lenDays = ev.end ? Math.max(0, daysBetween(ev.start.date, ev.end.date)) : 0;
+    const ad = !ev.start.time;
+    const endDate = addDays(date, lenDays);
+    res.push({
+      src: "outlook",
+      t: ev.title || "(utan titel)",
+      ad,
+      s: ad ? date : `${date}T${ev.start.time}`,
+      e: ad ? endDate : `${endDate}T${(ev.end && ev.end.time) || ev.start.time}`,
+      sd: date,
+      ed: ad ? addDays(endDate, lenDays ? -1 : 0) : endDate
+    });
+  };
+  for (const ev of events) {
+    if (ev.cancelled) continue;
+    if (!ev.rrule || ev.recurrenceId) {
+      if (ev.start.date <= to && (ev.end ? ev.end.date : ev.start.date) >= from) push(ev, ev.start.date);
+      continue;
+    }
+    const until = ev.rrule.UNTIL ? icsTime({ params: {}, value: ev.rrule.UNTIL }).date : null;
+    const count = ev.rrule.COUNT ? +ev.rrule.COUNT : Infinity;
+    const skip = moved.get(ev.uid) || new Set();
+    let n = 0;
+    for (let d = ev.start.date; d <= to && (!until || d <= until) && n < count; d = addDays(d, 1)) {
+      if (!rruleHits(ev.rrule, ev.start.date, d)) continue;
+      n++;
+      if (d >= from && !ev.exdates.has(d) && !skip.has(d)) push(ev, d);
+    }
+  }
+  return res.sort((a, b) => a.s.localeCompare(b.s));
+}
+
+async function wcalFetch(manual) {
+  const url = settings().workIcs;
+  if (!url) return manual && toast("Klistra in adressen till jobbkalendern först");
+  try {
+    if (!local.syncKey) throw new Error("synknyckel saknas");
+    const res = await fetch(workerUrl() + "/ics?url=" + encodeURIComponent(url), { headers: { "X-Journal-Key": local.syncKey } });
+    const text = await res.text();
+    if (!res.ok || !text.includes("BEGIN:VCALENDAR")) {
+      let msg = "kalendern gick inte att hämta";
+      try { msg = JSON.parse(text).error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    const events = expandIcs(parseIcs(text), addDays(today(), -14), addDays(today(), 120));
+    put("meta", { id: "wcal", events, fetchedAt: Date.now() });
+    if (manual) toast(`Hämtade ${events.length} möten från jobbkalendern`);
+    render();
+  } catch (e) {
+    if (manual) toast("Jobbkalendern: " + e.message);
+  }
+}
+
 /* ---------------- Start ---------------- */
 
 window.addEventListener("hashchange", () => {
@@ -2882,6 +3095,8 @@ window.addEventListener("hashchange", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     syncNow(false);
+    const w = get("meta", "wcal");
+    if (settings().workIcs && (!w || Date.now() - w.fetchedAt > 30 * 60000)) wcalFetch(false);
     if (local.gToken && local.gTokenExp > Date.now() + 60000) {
       const g = get("meta", "gcal");
       if (!g || Date.now() - g.fetchedAt > 30 * 60000) gcalFetch();
@@ -2917,3 +3132,4 @@ if ("serviceWorker" in navigator) {
 }
 render();
 syncNow(false);
+if (settings().workIcs && (!get("meta", "wcal") || Date.now() - get("meta", "wcal").fetchedAt > 30 * 60000)) wcalFetch(false);

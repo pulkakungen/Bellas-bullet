@@ -43,6 +43,13 @@ hamnar i det här repot. Google Kalender läses bara, inget skrivs dit.
      `https://pulkakungen.github.io`.
    * Klistra in klient ID:t i Inställningar och tryck "Koppla och hämta".
 
+4. **Jobbkalender (Outlook, bara läsning)**
+   * Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender.
+   * Välj kalendern och "Kan visa all information", tryck Publicera och kopiera **ICS**-länken.
+   * Klistra in den i appen under Inställningar → Jobbkalender. Workern hämtar den (`/ics`),
+     appen tolkar återkommande möten, undantag och flyttade tillfällen.
+   * Går det inte att publicera kan det vara avstängt av IT. Fråga då om en ICS-prenumeration.
+
 ## Sidorna
 
 Index (s. 1) → Nyckel (s. 2) → Framtidslogg (s. 3) → varje månad börjar med sitt uppslag,

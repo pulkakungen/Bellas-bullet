@@ -71,6 +71,16 @@ async function handleRequest(request, env, url) {
     return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
   }
 
+  // Hämtar en publicerad kalender (ICS, t.ex. från Outlook) åt appen, som
+  // själv inte får hämta den på grund av CORS. Tolkningen sker i appen.
+  if (url.pathname === "/ics" && request.method === "GET") {
+    const target = url.searchParams.get("url") || "";
+    if (!/^https:\/\//i.test(target.replace(/^webcal:/i, "https:"))) return json({ error: "ogiltig kalenderadress" }, 400);
+    const res = await fetch(target.replace(/^webcal:/i, "https:"), { headers: { Accept: "text/calendar" } });
+    if (!res.ok) return json({ error: `kalendern svarade ${res.status}` }, 502);
+    return new Response(await res.text(), { headers: { ...CORS, "Content-Type": "text/calendar; charset=utf-8" } });
+  }
+
   if (url.pathname === "/food/list" && request.method === "GET") {
     try {
       return json({ list: (await lmvList(env)).map((f) => [f.nummer, f.namn]) });
