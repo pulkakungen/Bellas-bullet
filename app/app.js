@@ -852,7 +852,9 @@ function wellbeingBlock(date) {
        .join("")}</div></div>
      ${health(date) ? `<label class="field"><span>Hur mår du? Symtom</span><input data-change="symptoms" data-date="${date}" value="${esc(r.symptoms || "")}" placeholder="t.ex. feber, halsont" /></label>` : ""}
      <div class="well-row"><span>Sömn</span><label class="inline-num"><input type="number" inputmode="decimal" min="0" max="16" step="0.5" value="${r.sleep ?? ""}" data-change="sleep" data-date="${date}" placeholder="0" /> timmar</label></div>
-     <div class="well-row"><span>Medicin</span><button class="tick ${r.meds ? "on" : ""}" data-act="toggleMeds" data-date="${date}">${sym(r.meds ? "done" : "open")}Tagen</button></div>
+     <div class="well-row"><span>Medicin</span><div class="btn-row">${[["medsAm", "Morgon"], ["medsPm", "Kväll"]]
+       .map(([k, label]) => `<button class="tick ${r[k] ? "on" : ""}" data-act="toggleMeds" data-key="${k}" data-date="${date}">${sym(r[k] ? "done" : "open")}${label}</button>`)
+       .join("")}</div></div>
      <label class="field"><span>Tacksam för idag</span><textarea rows="2" data-change="grateful" data-date="${date}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>`
   );
 }
@@ -1677,7 +1679,11 @@ function viewTracker(ym) {
       const goal = settings().proteinGoal;
       return cell(d, !t.p ? "" : !goal || t.p >= goal ? "on" : "half");
     }),
-    row("Medicin", (d) => cell(d, dayRec(d).meds ? "on" : "")),
+    row("Medicin", (d) => {
+      const r = dayRec(d);
+      const n = (r.medsAm ? 1 : 0) + (r.medsPm ? 1 : 0);
+      return cell(d, n === 2 ? "on" : n || r.meds ? "half" : "");
+    }),
     row("Steg", (d) => cell(d, (dayRec(d).steps || 0) >= STEP_GOAL ? "on" : (dayRec(d).steps || 0) > 0 ? "half" : "")),
     row("Träning", (d) => {
       const w = live("workouts").filter((x) => x.date === d);
@@ -2162,7 +2168,7 @@ const actions = {
     render();
   },
   toggleMeds: (d) => {
-    setDay(d.date, { meds: !dayRec(d.date).meds });
+    setDay(d.date, { [d.key]: !dayRec(d.date)[d.key] });
     render();
   },
   editRoutine: (d) => routineDialog(d.id),

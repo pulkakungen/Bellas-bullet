@@ -433,7 +433,8 @@ function morningMessage(state, date) {
   const zone = zoneForWeek(state, date);
   if (zone) lines.push("Veckans zon: " + zone.name);
 
-  return { title: "God morgon", body: lines.join("\n") || "Ett tomt blad idag. Vad vill du hinna med?", tag: "bullet-morgon" };
+  lines.push("Ta morgonmedicinen.");
+  return { title: "God morgon", body: lines.join("\n"), tag: "bullet-morgon" };
 }
 
 // Hudvården för kvällen: hur många steg som återstår.
@@ -445,6 +446,8 @@ function skinLeft(state, date) {
 
 function eveningMessage(state, date) {
   const msg = eveningTasks(state, date);
+  const day = (state.days || {})[date] || {};
+  if (!day.medsPm) msg.body += "\nGlöm inte kvällsmedicinen.";
   const left = skinLeft(state, date);
   if (left) msg.body += `\nHudvård: ${left} steg kvar ikväll.`;
   return msg;
