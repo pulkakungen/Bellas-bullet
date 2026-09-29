@@ -688,3 +688,4 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
 .seg-btn.on { background: var(--ink); color: var(--paper); }
 .health-note { color: var(--accent); }
+.skip-btn { margin: 8px 8px 0 0; }

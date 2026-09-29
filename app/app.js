@@ -449,8 +449,10 @@ function choreCap(date) {
   const s = settings();
   return wd === 0 || wd === 6 ? s.choresWeekend ?? DEFAULT_CHORES.weekend : s.choresWeekday ?? DEFAULT_CHORES.weekday;
 }
+// Ingen städning idag: sjuk, eller om du valt att hoppa över dagen.
+const choresOff = (date) => isSick(date) || !!dayRec(date).skipChores;
 function choreLimit(date) {
-  if (isSick(date)) return 0;
+  if (choresOff(date)) return 0;
   const b = busyMinutes(date);
   const byCalendar = b >= 360 ? 0 : b >= 180 ? 1 : b >= 60 ? 2 : 5;
   return Math.min(choreCap(date), byCalendar);
@@ -765,7 +767,7 @@ function viewDay(date) {
 function choresBlock(date) {
   const infos = live("routines").map((r) => routineInfo(r, date));
   const isDaily = (i) => i.r.mode !== "weekday" && i.r.every <= 1;
-  const daily = isSick(date) ? [] : infos.filter((i) => isDaily(i) && !i.done);
+  const daily = choresOff(date) ? [] : infos.filter((i) => isDaily(i) && !i.done);
   const due = infos.filter((i) => !isDaily(i) && i.due && !i.done).sort((a, b) => b.score - a.score);
   const doneToday = infos.filter((i) => i.done);
   const limit = choreLimit(date);
@@ -782,11 +784,12 @@ function choresBlock(date) {
   const busy = busyMinutes(date);
   if (due.length) {
     const wknd = [0, 6].includes(parseYmd(date).getDay());
-    body += `<p class="hint">${isSick(date) ? "Du är sjuk idag. Vila, sysslorna väntar." : limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
+    body += `<p class="hint">${isSick(date) ? "Du är sjuk idag. Vila, sysslorna väntar." : dayRec(date).skipChores ? `Hoppar över idag, sysslorna kommer imorgon. <button class="link-btn" data-act="skipChores" data-date="${date}">ångra</button>` : limit === 0 ? "Fullt i kalendern idag, sysslorna får vänta." : busy >= 180 ? "Fullt i kalendern idag, så bara det viktigaste." : wknd ? "Helg, lite mer tid för hemmet." : "Vardag, bara det viktigaste."}</p>`;
   }
   const none = !infos.length ? '<li class="empty">Inga rutiner än. Lägg till under <a href="#routines">Index → Rutiner</a>.</li>' : '<li class="empty">Inget förfallet. Hemmet mår bra.</li>';
-  const sick = isSick(date);
+  const sick = choresOff(date);
   body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || (sick ? "" : none)}</ul>`;
+  if (!isSick(date) && !dayRec(date).skipChores && (shown.length || hidden > 0)) body += `<button class="btn-small ghost skip-btn" data-act="skipChores" data-date="${date}">Ingen städning idag</button> `;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
   else if (!due.length && infos.some((i) => !isDaily(i))) {
@@ -2043,6 +2046,12 @@ const actions = {
     const meals = [...(dayRec(d.date).meals || [false, false, false])];
     meals[+d.i] = !meals[+d.i];
     setDay(d.date, { meals });
+    render();
+  },
+  skipChores: (d) => {
+    const on = !dayRec(d.date).skipChores;
+    setDay(d.date, { skipChores: on });
+    if (on) toast("Sysslorna kommer imorgon i stället");
     render();
   },
   setHealth: (d) => {
