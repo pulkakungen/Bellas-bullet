@@ -17,7 +17,7 @@ hamnar i det här repot. Google Kalender läses bara, inget skrivs dit.
 ## Kom igång
 
 1. **Publicera appen:** Settings → Pages → Source: *GitHub Actions*. Appen hamnar på
-   `https://pulkakungen.github.io/bellas-bullet/`.
+   `https://pulkakungen.github.io/Bellas-bullet/`.
 
 2. **Worker (synk och notiser)**
    ```sh
