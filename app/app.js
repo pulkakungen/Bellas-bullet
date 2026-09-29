@@ -8,6 +8,8 @@
 
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+// Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
+const DEFAULT_GCAL_CLIENT_ID = "400889692963-6f538f6tr3ek5l0v8q66af0qpik0pae6.apps.googleusercontent.com";
 
 const STATE_KEY = "bullet_state_v1";
 const LOCAL_KEY = "bullet_local_v1"; // bara den här enheten: synknyckel, Google-token
@@ -1559,7 +1561,7 @@ function viewSettings() {
     block(
       "Google Kalender",
       `<p class="hint">Läses bara. Inget skrivs till Google.</p>
-       <label class="field"><span>OAuth klient ID</span><input data-change="clientId" value="${esc(s.gcalClientId || "")}" placeholder="xxxx.apps.googleusercontent.com" /></label>
+       <label class="field"><span>OAuth klient ID</span><input data-change="clientId" value="${esc(s.gcalClientId || DEFAULT_GCAL_CLIENT_ID)}" placeholder="xxxx.apps.googleusercontent.com" /></label>
        <div class="btn-row"><button class="btn-small" data-act="gcalConnect">${tokenOk ? "Hämta igen" : "Koppla och hämta"}</button>
        ${local.gToken ? '<button class="btn-small ghost" data-act="gcalDisconnect">Koppla från</button>' : ""}</div>
        <p class="hint">${gcal && gcal.fetchedAt ? `Senast hämtat ${new Date(gcal.fetchedAt).toLocaleString("sv-SE")}, ${gcal.events.length} händelser.` : "Inte hämtat än."}</p>`
@@ -2212,7 +2214,7 @@ function loadGis() {
 }
 
 async function gcalConnect() {
-  const clientId = settings().gcalClientId;
+  const clientId = settings().gcalClientId || DEFAULT_GCAL_CLIENT_ID;
   if (!clientId) return toast("Lägg in klient ID först");
   if (local.gToken && local.gTokenExp > Date.now() + 60000) return gcalFetch();
   try {
