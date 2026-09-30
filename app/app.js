@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-09-30.2";
+const APP_VERSION = "2026-09-30.3";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1038,7 +1038,7 @@ function parseAmount(q) {
 
 // Livsmedelsverkets lista hämtas en gång via workern och sparas i telefonen
 // i en vecka. Sökningen sker här, direkt och även utan nät.
-const LMV_CACHE = "bullet_lmv_v1";
+const LMV_CACHE = "bullet_lmv_v2";
 let lmvItems = null;
 async function lmvList() {
   if (lmvItems) return lmvItems;
@@ -1046,10 +1046,13 @@ async function lmvList() {
   try {
     cached = JSON.parse(localStorage.getItem(LMV_CACHE) || "null");
   } catch (e) {}
-  if (!cached || Date.now() - cached.at > 7 * 864e5) {
+  try {
+    localStorage.removeItem("bullet_lmv_v1"); // kunde innehålla en tom lista
+  } catch (e) {}
+  if (!cached || !cached.list?.length || Date.now() - cached.at > 7 * 864e5) {
     const data = await workerGet("/food/list");
     if (data.error) throw new Error(data.error);
-    if (!Array.isArray(data.list)) throw new Error("ingen livsmedelslista från workern");
+    if (!Array.isArray(data.list) || !data.list.length) throw new Error("ingen livsmedelslista från workern");
     cached = { at: Date.now(), list: data.list };
     try {
       localStorage.setItem(LMV_CACHE, JSON.stringify(cached));
