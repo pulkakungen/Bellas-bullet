@@ -701,14 +701,23 @@ function entryRow(e, opts = {}) {
   </li>${opts.noChildren ? "" : childrenOf(e.id).map((c) => entryRow(c, { child: true })).join("")}`.replace('<li class="entry', `<li class="entry${opts.child ? " child" : ""}`);
 }
 
+// Möte eller event: först det du valt för titeln, sedan standard per källa
+// (Outlook = möte, Google = event, ändras under Inställningar).
+function evType(ev) {
+  const s = settings();
+  const t = ev.orig || ev.t;
+  const o = s.eventTypes || {};
+  return o[`${t}|*`] || (ev.src === "outlook" ? s.typeOutlook || "meeting" : s.typeGoogle || "event");
+}
+
 function gcalRow(ev) {
   const time = ev.ad ? "" : `<span class="e-time">${ev.s.slice(11, 16)}</span>`;
   if (ev.src === "egen") {
     return `<li class="entry ty-${ev.type} own-cal"><span class="sig"></span><span class="sym static">${sym(ev.type)}</span>
       <span class="e-text" data-act="calMenu" data-id="${ev.id}" data-date="${ev.sd}">${time}${esc(ev.t)}${ev.eTime ? `<span class="e-from">till ${ev.eTime}</span>` : ""}${ev.work ? '<span class="work-tag">jobb</span>' : ""}${ev.repeat ? '<span class="e-from">↻</span>' : ""}</span></li>`;
   }
-  return `<li class="entry ty-event gcal"><span class="sig"></span><span class="sym static">${sym("event")}</span>
-    <span class="e-text" data-act="gcalMenu" data-key="${esc(`${ev.orig || ev.t}|${ev.s}`)}" data-title="${esc(ev.orig || ev.t)}" data-shown="${esc(ev.t)}" data-time="${ev.ad ? "" : ev.s.slice(11, 16)}" data-src="${ev.src || "google"}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
+  return `<li class="entry ty-${evType(ev)} gcal"><span class="sig"></span><span class="sym static">${sym(evType(ev))}</span>
+    <span class="e-text" data-act="gcalMenu" data-key="${esc(`${ev.orig || ev.t}|${ev.s}`)}" data-title="${esc(ev.orig || ev.t)}" data-shown="${esc(ev.t)}" data-time="${ev.ad ? "" : ev.s.slice(11, 16)}" data-src="${ev.src || "google"}" data-type="${evType(ev)}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
 }
 
 function birthdayRow(b, date) {
@@ -2228,6 +2237,7 @@ function viewSettings() {
     block(
       "Jobbkalender (Outlook)",
       `<p class="hint">Läses bara. I Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender → välj kalendern och "Kan visa all information" → Publicera → kopiera <b>ICS</b>-länken hit.</p>
+       <label class="field"><span>Outlook-händelser visas som</span><select data-change="typeOutlook"><option value="meeting" ${(settings().typeOutlook || "meeting") === "meeting" ? "selected" : ""}>△ Möte</option><option value="event" ${settings().typeOutlook === "event" ? "selected" : ""}>○ Event</option></select></label>
        <label class="field"><span>ICS-länk</span><input data-change="workIcs" value="${esc(settings().workIcs || "")}" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" autocomplete="off" /></label>
        <div class="btn-row"><button class="btn-small" data-act="wcalFetch">Hämta jobbkalendern</button>
          <label class="btn-small ghost file-btn">Läs in kalenderfil (.ics)<input type="file" accept=".ics,text/calendar" data-change="icsFile" hidden /></label></div>
@@ -2237,6 +2247,7 @@ function viewSettings() {
     block(
       "Google Kalender",
       `<p class="hint">Läses bara. Inget skrivs till Google.</p>
+       <label class="field"><span>Google-händelser visas som</span><select data-change="typeGoogle"><option value="event" ${(settings().typeGoogle || "event") === "event" ? "selected" : ""}>○ Event</option><option value="meeting" ${settings().typeGoogle === "meeting" ? "selected" : ""}>△ Möte</option></select></label>
        <label class="field"><span>OAuth klient ID</span><input data-change="clientId" value="${esc(s.gcalClientId || DEFAULT_GCAL_CLIENT_ID)}" placeholder="xxxx.apps.googleusercontent.com" /></label>
        <div class="btn-row"><button class="btn-small" data-act="gcalConnect">${tokenOk ? "Hämta igen" : "Koppla och hämta"}</button>
        ${local.gToken ? '<button class="btn-small ghost" data-act="gcalDisconnect">Koppla från</button>' : ""}</div>
@@ -2601,11 +2612,16 @@ const actions = {
     const from = d.src === "outlook" ? "Outlook" : "Google Kalender";
     const res = await openSheet(esc(d.shown || d.title), `<p class="hint">Från ${from}. Det du ändrar här påverkar bara appen, inte din kalender.</p>`, [
       { value: "rename", label: "Byt namn" },
+      { value: "astype", label: d.type === "meeting" ? `${sym("event")} Visa som event` : `${sym("meeting")} Visa som möte` },
       { value: "one", label: "Dölj den här" },
       { value: "all", label: `Dölj alla som heter "${esc(d.title)}"` },
       CLOSE
     ]);
     const s = settings();
+    if (res.action === "astype") {
+      put("meta", { ...s, eventTypes: { ...(s.eventTypes || {}), [`${d.title}|*`]: d.type === "meeting" ? "event" : "meeting" } });
+      return render();
+    }
     if (res.action === "rename") {
       const r = await openSheet(
         "Byt namn",
@@ -2929,6 +2945,10 @@ document.addEventListener("change", async (ev) => {
       if (local.gToken && local.gTokenExp > Date.now() + 60000) gcalFetch();
       else toast("Tryck Hämta igen för att hämta den kalendern");
     }
+    return render();
+  }
+  else if (c === "typeOutlook" || c === "typeGoogle") {
+    put("meta", { ...settings(), [c]: el.value });
     return render();
   }
   else if (c === "choresWeekday" || c === "choresWeekend") put("meta", { ...settings(), [c]: Math.max(0, Math.min(10, parseInt(el.value, 10) || 0)) });
