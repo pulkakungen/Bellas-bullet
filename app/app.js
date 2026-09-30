@@ -560,6 +560,7 @@ function go(hash) {
 }
 
 let showAllChores = false;
+let showPastEvents = false;
 
 function render() {
   const { view, arg } = route();
@@ -763,8 +764,19 @@ function viewDay(date) {
       <button class="btn-small" data-act="migrate">Gå igenom</button></div>`;
   }
 
-  const calRows = [...holidaysOn(date).map(holidayRow), ...bdays.map((b) => birthdayRow(b, date)), ...gcal.map(gcalRow)];
-  html += block("Kalender", list(calRows, "Inget i kalendern.") + `<button class="btn-small ghost cal-add" data-act="calAdd" data-date="${date}">+ Lägg till i kalendern</button>`);
+  // Idag: det som redan är slut döljs (utan sluttid räknas en timme).
+  const nowStamp = `${t}T${pad(new Date().getHours())}:${pad(new Date().getMinutes())}`;
+  const endOf = (e) => (e.ad ? null : e.e && e.e > e.s ? e.e : `${e.s.slice(0, 11)}${pad(Math.min(23, +e.s.slice(11, 13) + 1))}:${e.s.slice(14, 16)}`);
+  const isPast = (e) => date === t && !e.ad && endOf(e) <= nowStamp;
+  const past = gcal.filter(isPast);
+  const upcoming = showPastEvents ? gcal : gcal.filter((e) => !isPast(e));
+  const calRows = [...holidaysOn(date).map(holidayRow), ...bdays.map((b) => birthdayRow(b, date)), ...upcoming.map(gcalRow)];
+  html += block(
+    "Kalender",
+    list(calRows, past.length ? "Inget mer i kalendern idag." : "Inget i kalendern.") +
+      (past.length ? `<button class="link-btn left" data-act="togglePast">${showPastEvents ? "dölj passerade" : `visa ${past.length} passerade`}</button> ` : "") +
+      `<button class="btn-small ghost cal-add" data-act="calAdd" data-date="${date}">+ Lägg till i kalendern</button>`
+  );
 
   html += block("Logg", list(entries.map((e) => entryRow(e)), "Tomt blad. Skriv nedan.") + logForm({ date }, "Skriv... (o event, m möte, . notering)"));
 
@@ -2498,6 +2510,10 @@ const actions = {
     put("entries", { id: uid(), type: "task", text: r.name, sig: "", status: "open", date: d.date, order: Date.now(), routine: r.id });
     render();
   },
+  togglePast: () => {
+    showPastEvents = !showPastEvents;
+    render();
+  },
   allChores: () => {
     showAllChores = !showAllChores;
     render();
@@ -3239,6 +3255,11 @@ document.addEventListener("visibilitychange", () => {
 });
 // Byt dag vid midnatt även om appen står öppen.
 let renderedDay = today();
+setInterval(() => {
+  const r = route();
+  const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if (r.view === "day" && (!r.arg || r.arg === today()) && !typing && !sheet().open && document.visibilityState === "visible") render();
+}, 5 * 60000);
 setInterval(() => {
   if (today() !== renderedDay) {
     renderedDay = today();
