@@ -6,6 +6,8 @@
    Google Kalender läses bara, inget skrivs dit.
    ========================================================= */
 
+// Ändras vid varje publicering, syns under Inställningar.
+const APP_VERSION = "2026-09-30.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -2299,6 +2301,11 @@ function viewSettings() {
        <p class="hint">${gcal && gcal.fetchedAt ? `Senast hämtat ${new Date(gcal.fetchedAt).toLocaleString("sv-SE")}, ${gcal.events.length} händelser.` : "Inte hämtat än."}</p>`
     ) +
     block(
+      "Appen",
+      `<p class="hint">Version ${APP_VERSION}. Visar telefonen en äldre version än datorn, tryck här. Det du skrivit påverkas inte.</p>
+       <button class="btn-small" data-act="forceUpdate">Hämta senaste versionen</button>`
+    ) +
+    block(
       "Data",
       `<div class="btn-row"><button class="btn-small ghost" data-act="export">Exportera</button>
        <label class="btn-small ghost file-btn">Importera<input type="file" accept="application/json" data-change="import" hidden /></label></div>`
@@ -2585,6 +2592,18 @@ const actions = {
   toggleShowWork: () => {
     put("meta", { ...settings(), showWork: !showWork() });
     render();
+  },
+  // Rensar service worker och sparade filer (inte din data) och laddar om.
+  forceUpdate: async () => {
+    toast("Hämtar senaste versionen...");
+    await syncNow(false);
+    try {
+      const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = (await caches?.keys?.()) || [];
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (e) {}
+    location.replace(location.pathname + "?v=" + Date.now() + location.hash);
   },
   togglePast: () => {
     showPastEvents = !showPastEvents;
