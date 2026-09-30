@@ -417,10 +417,13 @@ function gcalOn(state, date) {
   const keys = new Set(settings.gcalHiddenKeys || []);
   const titles = new Set((settings.gcalHiddenTitles || []).map((t) => t.trim().toLowerCase()));
   const seen = new Set();
-  return events.filter((e) => {
+  const inDay = events.filter((e) => e.sd <= date && date <= e.ed && !keys.has(`${e.t}|${e.s}`) && !titles.has(String(e.t || "").trim().toLowerCase()));
+  const timed = new Set(inDay.filter((e) => !e.ad).map((e) => String(e.t || "").trim().toLowerCase()));
+  return inDay.filter((e) => {
     const title = String(e.t || "").trim().toLowerCase();
-    if (!(e.sd <= date && date <= e.ed) || keys.has(`${e.t}|${e.s}`) || titles.has(title) || seen.has(title)) return false;
-    seen.add(title);
+    const k = title + "|" + (e.ad ? "heldag" : e.s.slice(11, 16));
+    if (seen.has(k) || (e.ad && timed.has(title))) return false;
+    seen.add(k);
     return true;
   });
 }

@@ -435,15 +435,22 @@ function gcalEventsOn(date) {
   const s = settings();
   const hiddenKeys = new Set(s.gcalHiddenKeys || []);
   const hiddenTitles = new Set((s.gcalHiddenTitles || []).map(normTitle));
-  const byTitle = new Map();
+  // Namnbyten: exakt tillfälle, samma titel och klockslag (dagliga möten), eller bara titel.
+  const renames = s.eventRenames || {};
+  const renamed = (e) => renames[`${e.t}|${e.s}`] || (!e.ad && renames[`${e.t}|@${e.s.slice(11, 16)}`]) || renames[`${e.t}|*`] || null;
+  // Dubbletter: samma titel och starttid visas en gång, och en heldag med
+  // samma namn som ett tidsatt möte samma dag döljs.
+  const kept = new Map();
   for (const e of cache.events) {
     if (!(e.sd <= date && date <= e.ed)) continue;
     if (hiddenKeys.has(gcalKey(e)) || hiddenTitles.has(normTitle(e.t))) continue;
-    const k = normTitle(e.t);
-    const prev = byTitle.get(k);
-    if (!prev || (prev.ad && !e.ad)) byTitle.set(k, e);
+    const k = normTitle(e.t) + "|" + (e.ad ? "heldag" : e.s.slice(11, 16));
+    if (!kept.has(k)) kept.set(k, renamed(e) ? { ...e, orig: e.t, t: renamed(e) } : e);
   }
-  return [...byTitle.values()].sort((a, b) => (a.ad === b.ad ? a.s.localeCompare(b.s) : a.ad ? -1 : 1));
+  const timedTitles = new Set([...kept.values()].filter((e) => !e.ad).map((e) => normTitle(e.orig || e.t)));
+  return [...kept.values()]
+    .filter((e) => !(e.ad && timedTitles.has(normTitle(e.orig || e.t))))
+    .sort((a, b) => (a.ad === b.ad ? a.s.localeCompare(b.s) : a.ad ? -1 : 1));
 }
 
 // Hur full är dagen? Styr hur många sysslor appen föreslår.
@@ -692,7 +699,7 @@ function gcalRow(ev) {
       <span class="e-text" data-act="calMenu" data-id="${ev.id}" data-date="${ev.sd}">${time}${esc(ev.t)}${ev.eTime ? `<span class="e-from">till ${ev.eTime}</span>` : ""}${ev.work ? '<span class="work-tag">jobb</span>' : ""}${ev.repeat ? '<span class="e-from">↻</span>' : ""}</span></li>`;
   }
   return `<li class="entry ty-event gcal"><span class="sig"></span><span class="sym static">${sym("event")}</span>
-    <span class="e-text" data-act="gcalMenu" data-key="${esc(gcalKey(ev))}" data-title="${esc(ev.t)}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
+    <span class="e-text" data-act="gcalMenu" data-key="${esc(`${ev.orig || ev.t}|${ev.s}`)}" data-title="${esc(ev.orig || ev.t)}" data-shown="${esc(ev.t)}" data-time="${ev.ad ? "" : ev.s.slice(11, 16)}" data-src="${ev.src || "google"}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
 }
 
 function birthdayRow(b, date) {
@@ -2224,6 +2231,11 @@ function viewSettings() {
              .map((t) => `<li><span class="c-name">Alla "${esc(t)}"</span><button class="plus-btn" data-act="gcalUnhide" data-kind="title" data-val="${esc(t)}">visa igen</button></li>`)
              .join("")}${(settings().gcalHiddenKeys || []).length ? `<li><span class="c-name">${settings().gcalHiddenKeys.length} enstaka händelser</span><button class="plus-btn" data-act="gcalUnhide" data-kind="keys">visa igen</button></li>` : ""}</ul>`
          : ""}
+       ${Object.keys(settings().eventRenames || {}).length
+         ? `<h3>Namnbyten</h3><ul class="chores">${Object.entries(settings().eventRenames)
+             .map(([k, v]) => `<li><span class="c-name">${esc(v)}<span class="c-meta">${esc(k.replace(/\|\*$/, " (alla)").replace(/\|@/, " kl ").replace(/\|(\d{4}-\d{2}-\d{2})T?(.*)$/, " den $1 $2"))}</span></span><button class="plus-btn" data-act="unrename" data-key="${esc(k)}">ta bort</button></li>`)
+             .join("")}</ul>`
+         : ""}
        <p class="hint">${gcal && gcal.fetchedAt ? `Senast hämtat ${new Date(gcal.fetchedAt).toLocaleString("sv-SE")}, ${gcal.events.length} händelser.` : "Inte hämtat än."}</p>`
     ) +
     block(
@@ -2564,16 +2576,41 @@ const actions = {
   editBirthday: (d) => birthdayDialog(d.id),
   editHabit: (d) => habitDialog(d.id),
   gcalMenu: async (d) => {
-    const res = await openSheet(esc(d.title), '<p class="hint">Från Google Kalender. Att dölja påverkar bara appen, inte din kalender.</p>', [
+    const from = d.src === "outlook" ? "Outlook" : "Google Kalender";
+    const res = await openSheet(esc(d.shown || d.title), `<p class="hint">Från ${from}. Det du ändrar här påverkar bara appen, inte din kalender.</p>`, [
+      { value: "rename", label: "Byt namn" },
       { value: "one", label: "Dölj den här" },
       { value: "all", label: `Dölj alla som heter "${esc(d.title)}"` },
       CLOSE
     ]);
     const s = settings();
+    if (res.action === "rename") {
+      const r = await openSheet(
+        "Byt namn",
+        `<label class="field"><span>Nytt namn</span><input name="name" value="${esc(d.shown && d.shown !== d.title ? d.shown : d.title === "(utan titel)" ? "" : d.title)}" required /></label>
+         <p class="hint">Gäller för:</p>
+         <label class="check-field"><input type="radio" name="scope" value="one" ${d.time ? "" : "checked"} /> Bara den här</label>
+         ${d.time ? `<label class="check-field"><input type="radio" name="scope" value="time" checked /> Alla "${esc(d.title)}" kl ${d.time} (t.ex. ett dagligt möte)</label>` : ""}
+         <label class="check-field"><input type="radio" name="scope" value="title" /> Alla som heter "${esc(d.title)}"</label>`,
+        [{ value: "ok", label: "Spara", cls: "btn-primary" }, CLOSE]
+      );
+      if (r.action !== "ok" || !r.data.name.trim()) return;
+      const key = r.data.scope === "time" ? `${d.title}|@${d.time}` : r.data.scope === "title" ? `${d.title}|*` : d.key;
+      put("meta", { ...s, eventRenames: { ...(s.eventRenames || {}), [key]: r.data.name.trim() } });
+      toast("Namnet ändrat i appen");
+      return render();
+    }
     if (res.action === "one") put("meta", { ...s, gcalHiddenKeys: [...new Set([...(s.gcalHiddenKeys || []), d.key])] });
     else if (res.action === "all") put("meta", { ...s, gcalHiddenTitles: [...new Set([...(s.gcalHiddenTitles || []), d.title.trim()])] });
     else return;
     toast("Dold. Ta fram den igen under Inställningar.");
+    render();
+  },
+  unrename: (d) => {
+    const s = settings();
+    const next = { ...(s.eventRenames || {}) };
+    delete next[d.key];
+    put("meta", { ...s, eventRenames: next });
     render();
   },
   gcalUnhide: (d) => {
