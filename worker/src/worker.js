@@ -84,7 +84,7 @@ async function handleRequest(request, env, url) {
   // Produktsök i Open Food Facts (märkesvaror), reserv om appen inte når dem direkt.
   if (url.pathname === "/off" && request.method === "GET") {
     const q = (url.searchParams.get("q") || "").slice(0, 100);
-    const res = await fetch(offSearchUrl(q), { headers: { "User-Agent": "BellasBullet/1.0 (privat dagbok)" } });
+    const res = await fetch(offSearchUrl(q, url.searchParams.get("world") === "1"), { headers: { "User-Agent": "BellasBullet/1.0 (privat dagbok)" } });
     if (!res.ok) return json({ error: `Open Food Facts svarade ${res.status}` }, 502);
     return new Response(await res.text(), { headers: { ...CORS, "Content-Type": "application/json" } });
   }
@@ -150,8 +150,9 @@ async function sendJournalPush(env, { title, body, tag }) {
   }
 }
 
-const offSearchUrl = (q) =>
-  "https://se.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n" +
+const offSearchUrl = (q, world) =>
+  `https://${world ? "world" : "se"}.openfoodfacts.org` +
+  "/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n" +
   "&fields=code,product_name,product_name_sv,brands,quantity,nutriments,serving_quantity&search_terms=" + encodeURIComponent(q);
 
 /* ---------------- Livsmedelsverket ---------------- */

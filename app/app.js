@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-09-30.3";
+const APP_VERSION = "2026-09-30.4";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1171,14 +1171,22 @@ function offProducts(data) {
 async function offSearch(q) {
   const terms = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w)).join(" ");
   if (!terms) return [];
-  const direct = `https://se.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n&fields=${OFF_FIELDS}&search_terms=${encodeURIComponent(terms)}`;
-  try {
-    const res = await fetch(direct);
-    if (!res.ok) throw new Error(res.status);
-    return offProducts(await res.json());
-  } catch (e) {
-    return offProducts(await workerGet("/off?q=" + encodeURIComponent(terms)));
-  }
+  const one = async (site) => {
+    const url = `https://${site}.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n&fields=${OFF_FIELDS}&search_terms=${encodeURIComponent(terms)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status);
+      return offProducts(await res.json());
+    } catch (e) {
+      return offProducts(await workerGet("/off?q=" + encodeURIComponent(terms) + (site === "world" ? "&world=1" : "")));
+    }
+  };
+  // Först det som säljs i Sverige, blir det få träffar letar vi i hela världen.
+  const se = await one("se");
+  if (se.length >= 6) return se;
+  const world = await one("world").catch(() => []);
+  const seen = new Set(se.map((f) => f.ean));
+  return [...se, ...world.filter((f) => !seen.has(f.ean))];
 }
 
 async function runFoodSearch(q) {
