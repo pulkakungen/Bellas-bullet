@@ -2187,8 +2187,10 @@ function viewSettings() {
       "Jobbkalender (Outlook)",
       `<p class="hint">Läses bara. I Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender → välj kalendern och "Kan visa all information" → Publicera → kopiera <b>ICS</b>-länken hit.</p>
        <label class="field"><span>ICS-länk</span><input data-change="workIcs" value="${esc(settings().workIcs || "")}" placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics" autocomplete="off" /></label>
-       <div class="btn-row"><button class="btn-small" data-act="wcalFetch">Hämta jobbkalendern</button></div>
-       <p class="hint">${get("meta", "wcal")?.fetchedAt ? `Senast hämtat ${new Date(get("meta", "wcal").fetchedAt).toLocaleString("sv-SE")}, ${get("meta", "wcal").events.length} möten.` : "Inte hämtad än."}</p>`
+       <div class="btn-row"><button class="btn-small" data-act="wcalFetch">Hämta jobbkalendern</button>
+         <label class="btn-small ghost file-btn">Läs in kalenderfil (.ics)<input type="file" accept=".ics,text/calendar" data-change="icsFile" hidden /></label></div>
+       <p class="hint">Går det inte att publicera? Spara kalendern från Outlook som fil (Arkiv → Spara kalender, eller dra kalendern till skrivbordet) och läs in den här. Läs in igen när du vill uppdatera.</p>
+       <p class="hint">${get("meta", "wcal")?.fetchedAt ? `Senast ${get("meta", "wcal").fromFile ? "inläst från fil" : "hämtat"} ${new Date(get("meta", "wcal").fetchedAt).toLocaleString("sv-SE")}, ${get("meta", "wcal").events.length} möten.` : "Inte hämtad än."}</p>`
     ) +
     block(
       "Google Kalender",
@@ -2850,6 +2852,18 @@ document.addEventListener("change", async (ev) => {
     return render();
   }
   else if (c === "choresWeekday" || c === "choresWeekend") put("meta", { ...settings(), [c]: Math.max(0, Math.min(10, parseInt(el.value, 10) || 0)) });
+  else if (c === "icsFile") {
+    try {
+      const text = await el.files[0].text();
+      if (!text.includes("BEGIN:VCALENDAR")) throw new Error("det är ingen kalenderfil");
+      const events = expandIcs(parseIcs(text), addDays(today(), -14), addDays(today(), 365));
+      put("meta", { id: "wcal", events, fetchedAt: Date.now(), fromFile: true });
+      toast(`Läste in ${events.length} möten`);
+    } catch (e) {
+      toast("Kunde inte läsa filen: " + e.message);
+    }
+    return render();
+  }
   else if (c === "workIcs") {
     put("meta", { ...settings(), workIcs: el.value.trim().replace(/^webcal:/i, "https:") });
     return wcalFetch(true);
