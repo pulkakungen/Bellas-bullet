@@ -733,3 +733,8 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .cal-add { margin-top: 8px; }
 .cal-type { margin: 4px 0 8px; }
 .cal-type .seg-btn:has(input:checked) { background: var(--ink); color: var(--paper); }
+
+/* ---------- Jobb och privat ---------- */
+.work-block h2 { color: var(--ink-soft); }
+.work-block .entry { font-size: 17px; }
+.work-count { margin: 2px 0 0 36px; font-size: 13px; color: var(--ink-soft); }

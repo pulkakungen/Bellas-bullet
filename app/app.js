@@ -402,7 +402,7 @@ function routineInfo(r, date) {
   const since = daysBetween(last, date);
   const due = since >= r.every;
   let label = `senast för ${since} ${since === 1 ? "dag" : "dagar"} sedan`;
-  if (since > r.every) label += `, ${since - r.every} över`;
+  if (since > r.every && r.every > 1) label += `, ${since - r.every} över`;
   return { r, done, due, since, score: since / r.every, label };
 }
 
@@ -454,17 +454,26 @@ function gcalEventsOn(date) {
 }
 
 // Hur full är dagen? Styr hur många sysslor appen föreslår.
+// Jobb eller privat: Outlook-möten och allt markerat som jobb är jobb.
+const isWorkEv = (e) => e.src === "outlook" || !!e.work;
+const privateEventsOn = (date) => gcalEventsOn(date).filter((e) => !isWorkEv(e));
+const workEventsOn = (date) => gcalEventsOn(date).filter(isWorkEv);
+const showWork = () => !!settings().showWork;
+const workToggle = () => `<button class="link-btn" data-act="toggleShowWork">${showWork() ? "dölj jobb" : "visa jobb"}</button>`;
+
+// Hur upptagen fritiden är: jobbmöten (Outlook, egna jobbhändelser och
+// #jobb-rader) räknas inte, de ligger på arbetstid och tar inte kvällen.
 function busyMinutes(date) {
   let min = 0;
   for (const e of gcalEventsOn(date)) {
-    if (e.ad) continue;
+    if (e.ad || e.src === "outlook" || e.work) continue;
     const s = new Date(e.s);
     const en = new Date(e.e);
     const dayStart = parseYmd(date);
     const dayEnd = parseYmd(addDays(date, 1));
     min += Math.max(0, (Math.min(en, dayEnd) - Math.max(s, dayStart)) / 6e4);
   }
-  min += entriesOn(date).filter((e) => (e.type === "meeting" || e.type === "event") && e.time).length * 60;
+  min += entriesOn(date).filter((e) => (e.type === "meeting" || e.type === "event") && e.time && !e.work).length * 60;
   return min;
 }
 // Tak för sysslor per dag: ditt tak för vardag eller helg, och lägre om
@@ -775,15 +784,23 @@ function viewDay(date) {
   const nowStamp = `${t}T${pad(new Date().getHours())}:${pad(new Date().getMinutes())}`;
   const endOf = (e) => (e.ad ? null : e.e && e.e > e.s ? e.e : `${e.s.slice(0, 11)}${pad(Math.min(23, +e.s.slice(11, 13) + 1))}:${e.s.slice(14, 16)}`);
   const isPast = (e) => date === t && !e.ad && endOf(e) <= nowStamp;
-  const past = gcal.filter(isPast);
-  const upcoming = showPastEvents ? gcal : gcal.filter((e) => !isPast(e));
-  const calRows = [...holidaysOn(date).map(holidayRow), ...bdays.map((b) => birthdayRow(b, date)), ...upcoming.map(gcalRow)];
+  const priv = gcal.filter((e) => !isWorkEv(e));
+  const workEv = gcal.filter(isWorkEv);
+  const pastPriv = priv.filter(isPast);
+  const pastWork = workEv.filter(isPast);
+  const pastLink = (n) => (n ? `<button class="link-btn left" data-act="togglePast">${showPastEvents ? "dölj passerade" : `visa ${n} passerade`}</button> ` : "");
+  const upcomingPriv = showPastEvents ? priv : priv.filter((e) => !isPast(e));
+  const calRows = [...holidaysOn(date).map(holidayRow), ...bdays.map((b) => birthdayRow(b, date)), ...upcomingPriv.map(gcalRow)];
   html += block(
     "Kalender",
-    list(calRows, past.length ? "Inget mer i kalendern idag." : "Inget i kalendern.") +
-      (past.length ? `<button class="link-btn left" data-act="togglePast">${showPastEvents ? "dölj passerade" : `visa ${past.length} passerade`}</button> ` : "") +
+    list(calRows, pastPriv.length ? "Inget mer i kalendern idag." : "Inget i kalendern.") +
+      pastLink(pastPriv.length) +
       `<button class="btn-small ghost cal-add" data-act="calAdd" data-date="${date}">+ Lägg till i kalendern</button>`
   );
+  if (workEv.length) {
+    const upcomingWork = showPastEvents ? workEv : workEv.filter((e) => !isPast(e));
+    html += block("Jobb", list(upcomingWork.map(gcalRow), "Inga fler möten idag.") + pastLink(pastWork.length), "work-block");
+  }
 
   html += block("Logg", list(entries.map((e) => entryRow(e)), "Tomt blad. Skriv nedan.") + logForm({ date }, "Skriv... (o event, m möte, . notering)"));
 
@@ -1349,7 +1366,7 @@ function viewWeek(start) {
   let html = `<header class="week-head" style="--tape:${tapeColor(ym)}">
     <a class="nav-arrow" href="#${prevPage("week", start)}" aria-label="Föregående sida">‹</a>
     <div class="page-title"><h1 class="tape-title">Vecka ${isoWeek(start)}</h1><div class="eyebrow">${niceDate(start)} till ${niceDate(end)}</div>
-      <button class="link-btn" data-act="calAdd" data-date="${start <= today() && today() <= end ? today() : start}">+ lägg till i kalendern</button>
+      <button class="link-btn" data-act="calAdd" data-date="${start <= today() && today() <= end ? today() : start}">+ lägg till i kalendern</button> · ${workToggle()}
       <div class="jump"><a href="#week/${addDays(start, -7)}">« v ${isoWeek(addDays(start, -7))}</a><a href="#week/${addDays(start, 7)}">v ${isoWeek(addDays(start, 7))} »</a></div></div>
     <a class="nav-arrow" href="#${nextPage("week", start)}" aria-label="Nästa sida">›</a>
   </header>`;
@@ -1359,7 +1376,7 @@ function viewWeek(start) {
     const rows = [
       ...holidaysOn(date).map(holidayRow),
       ...birthdaysOn(date).map((b) => birthdayRow(b, date)),
-      ...gcalEventsOn(date).map(gcalRow),
+      ...(showWork() ? gcalEventsOn(date) : privateEventsOn(date)).map(gcalRow),
       ...entriesOn(date).map((e) => entryRow(e))
     ];
     const r = dayRec(date);
@@ -1370,6 +1387,7 @@ function viewWeek(start) {
         <input class="work-hours" value="${esc(r.work || "")}" data-change="work" data-date="${date}" placeholder="arbetstid" aria-label="Arbetstid ${WD_LONG[d.getDay()]}" />
       </div>
       <ul class="log compact">${rows.join("")}</ul>
+      ${!showWork() && workEventsOn(date).length ? `<p class="work-count">${workEventsOn(date).length} jobbmöten</p>` : ""}
       <form class="mini-add" data-form="log" data-date="${date}" autocomplete="off"><input name="text" placeholder="+" aria-label="Lägg till ${WD_LONG[d.getDay()]}" /></form>
       <a href="#day/${date}" class="wd-num ${sunday ? "red" : ""}">${d.getDate()}</a>
     </section>`;
@@ -1458,7 +1476,7 @@ function viewMonth(ym) {
     const items = [
       ...holidaysOn(date).map((h) => `<span class="mi hol ${h.red ? "red" : ""}">${esc(h.name)}</span>`),
       ...birthdaysOn(date).map((b) => `<span class="mi bd">${esc(b.name)}</span>`),
-      ...gcalEventsOn(date).map((e) => `<span class="mi">${e.ad ? "" : +e.s.slice(11, 13) + (e.s.slice(14, 16) !== "00" ? "." + e.s.slice(14, 16) : "") + " "}${esc(e.t)}</span>`),
+      ...(showWork() ? gcalEventsOn(date) : privateEventsOn(date)).map((e) => `<span class="mi">${e.ad ? "" : +e.s.slice(11, 13) + (e.s.slice(14, 16) !== "00" ? "." + e.s.slice(14, 16) : "") + " "}${esc(e.t)}</span>`),
       ...entriesOn(date)
         .filter((e) => e.type === "event" || e.type === "meeting" || e.sig)
         .map((e) => `<span class="mi">${e.sig ? `<b>${esc(e.sig)}</b>` : ""}${e.time ? e.time.replace(":00", "") + " " : ""}${esc(e.text)}</span>`)
@@ -1476,7 +1494,7 @@ function viewMonth(ym) {
         <a class="nav-arrow" href="#${prevPage("month", ym)}" aria-label="Föregående sida">‹</a>
         <div><h1 class="cover-title">${monthName(ym)} <span>${ym.slice(0, 4)}</span></h1>
         <div class="jump"><a href="#month/${addMonths(ym, -1)}">« ${monthName(addMonths(ym, -1))}</a><a href="#month/${addMonths(ym, 1)}">${monthName(addMonths(ym, 1))} »</a></div>
-        <button class="link-btn" data-act="calAdd" data-date="${today().slice(0, 7) === ym ? today() : ym + "-01"}">+ lägg till i kalendern</button></div>
+        <button class="link-btn" data-act="calAdd" data-date="${today().slice(0, 7) === ym ? today() : ym + "-01"}">+ lägg till i kalendern</button> · ${workToggle()}</div>
         <a class="nav-arrow" href="#${nextPage("month", ym)}" aria-label="Nästa sida">›</a>
       </div>
     </section>
@@ -1643,7 +1661,7 @@ function viewEvening() {
   const tomorrowRows = [
     ...holidaysOn(tomorrow).map(holidayRow),
     ...birthdaysOn(tomorrow).map((b) => birthdayRow(b, tomorrow)),
-    ...gcalEventsOn(tomorrow).map(gcalRow),
+    ...privateEventsOn(tomorrow).map(gcalRow),
     ...entriesOn(tomorrow).map((e) => entryRow(e))
   ];
   const chores = live("routines").map((x) => routineInfo(x, tomorrow)).filter((i) => i.due).sort((a, b) => b.score - a.score).slice(0, choreLimit(tomorrow));
@@ -2520,6 +2538,10 @@ const actions = {
   choreToLog: (d) => {
     const r = get("routines", d.id);
     put("entries", { id: uid(), type: "task", text: r.name, sig: "", status: "open", date: d.date, order: Date.now(), routine: r.id });
+    render();
+  },
+  toggleShowWork: () => {
+    put("meta", { ...settings(), showWork: !showWork() });
     render();
   },
   togglePast: () => {
