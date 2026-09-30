@@ -19,7 +19,7 @@ const WORKOUT_GOAL = 2;
 const WATER_GOAL = 8;
 const WORKOUT_TYPES = { complete: "Complete", styrka: "Styrka", cardio: "Cardio" };
 
-const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "meta"];
+const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "cal", "meta"];
 
 /* ---------------- Datum ---------------- */
 
@@ -266,12 +266,23 @@ function parseQuick(raw, preset) {
     else break;
     s = s.slice(m[0].length);
   }
+  // tid eller tidsintervall var som helst på raden: "9:20-12.00", "kl 14", "14.30"
+  let end = "";
+  let m2;
+  if (!time && (m2 = s.match(/(?:^|\s)(?:kl\.?\s*)?(\d{1,2})(?:[:.](\d{2}))?\s*[-–]\s*(\d{1,2})(?:[:.](\d{2}))?(?=\s|$)/i)) && (m2[2] || m2[4] || /kl/i.test(m2[0]))) {
+    time = `${pad(Math.min(23, +m2[1]))}:${m2[2] || "00"}`;
+    end = `${pad(Math.min(23, +m2[3]))}:${m2[4] || "00"}`;
+    s = s.replace(m2[0], " ");
+  } else if (!time && (m2 = s.match(/(?:^|\s)(?:kl\.?\s*(\d{1,2})(?:[:.](\d{2}))?|(\d{1,2})[:.](\d{2}))(?=\s|$)/i))) {
+    time = `${pad(Math.min(23, +(m2[1] || m2[3])))}:${m2[2] || m2[4] || "00"}`;
+    s = s.replace(m2[0], " ");
+  }
   let work = !!preset.work;
   if (/(^|\s)#jobb\b/i.test(s)) {
     work = true;
     s = s.replace(/(^|\s)#jobb\b/gi, " ");
   }
-  return { type, sig, time, work, text: s.replace(/\s+/g, " ").trim() };
+  return { type, sig, time, end, work, text: s.replace(/\s+/g, " ").trim() };
 }
 
 // Kvällsplanering: "imorgon", "fre", "12/10", "2026-10-12", "nov", "v 42"
@@ -322,6 +333,7 @@ function addEntry(scope, raw, preset = {}) {
   if (!p.text) return;
   const e = { id: uid(), type: p.type, text: p.text, sig: p.sig, status: "open", order: Date.now(), ...scope };
   if (p.time) e.time = p.time;
+  if (p.end) e.end = p.end;
   if (p.work) e.work = true;
   put("entries", e);
   return e;
@@ -417,7 +429,7 @@ const zoneKey = (zone, task) => `z:${zone.id}:${task}`;
 const gcalKey = (e) => `${e.t}|${e.s}`;
 const normTitle = (t) => String(t || "").trim().toLowerCase();
 function gcalEventsOn(date) {
-  const all = [...(get("meta", "gcal")?.events || []), ...(get("meta", "wcal")?.events || [])];
+  const all = [...(get("meta", "gcal")?.events || []), ...(get("meta", "wcal")?.events || []), ...ownEventsOn(date)];
   if (!all.length) return [];
   const cache = { events: all };
   const s = settings();
@@ -663,7 +675,7 @@ function head(eyebrow, title, prevHash, nextHash, extra = "") {
 }
 
 function entryRow(e, opts = {}) {
-  const time = e.time ? `<span class="e-time">${e.time}</span>` : "";
+  const time = e.time ? `<span class="e-time">${e.time}${e.end ? "–" + e.end : ""}</span>` : "";
   const from = opts.showDate && e.date ? `<span class="e-from">${niceDate(e.date)}</span>` : "";
   return `<li class="entry ty-${e.type} st-${e.status}">
     <span class="sig" title="${SIG_LABEL[e.sig] || ""}">${esc(e.sig || "")}</span>
@@ -674,6 +686,10 @@ function entryRow(e, opts = {}) {
 
 function gcalRow(ev) {
   const time = ev.ad ? "" : `<span class="e-time">${ev.s.slice(11, 16)}</span>`;
+  if (ev.src === "egen") {
+    return `<li class="entry ty-${ev.type} own-cal"><span class="sig"></span><span class="sym static">${sym(ev.type)}</span>
+      <span class="e-text" data-act="calMenu" data-id="${ev.id}" data-date="${ev.sd}">${time}${esc(ev.t)}${ev.eTime ? `<span class="e-from">till ${ev.eTime}</span>` : ""}${ev.work ? '<span class="work-tag">jobb</span>' : ""}${ev.repeat ? '<span class="e-from">↻</span>' : ""}</span></li>`;
+  }
   return `<li class="entry ty-event gcal"><span class="sig"></span><span class="sym static">${sym("event")}</span>
     <span class="e-text" data-act="gcalMenu" data-key="${esc(gcalKey(ev))}" data-title="${esc(ev.t)}">${time}${esc(ev.t)}<span class="e-from">${ev.src === "outlook" ? "Outlook" : "Google"}</span></span></li>`;
 }
@@ -743,7 +759,7 @@ function viewDay(date) {
   }
 
   const calRows = [...holidaysOn(date).map(holidayRow), ...bdays.map((b) => birthdayRow(b, date)), ...gcal.map(gcalRow)];
-  if (calRows.length) html += block("Kalender", list(calRows, ""));
+  html += block("Kalender", list(calRows, "Inget i kalendern.") + `<button class="btn-small ghost cal-add" data-act="calAdd" data-date="${date}">+ Lägg till i kalendern</button>`);
 
   html += block("Logg", list(entries.map((e) => entryRow(e)), "Tomt blad. Skriv nedan.") + logForm({ date }, "Skriv... (o event, m möte, . notering)"));
 
@@ -1309,6 +1325,7 @@ function viewWeek(start) {
   let html = `<header class="week-head" style="--tape:${tapeColor(ym)}">
     <a class="nav-arrow" href="#${prevPage("week", start)}" aria-label="Föregående sida">‹</a>
     <div class="page-title"><h1 class="tape-title">Vecka ${isoWeek(start)}</h1><div class="eyebrow">${niceDate(start)} till ${niceDate(end)}</div>
+      <button class="link-btn" data-act="calAdd" data-date="${start <= today() && today() <= end ? today() : start}">+ lägg till i kalendern</button>
       <div class="jump"><a href="#week/${addDays(start, -7)}">« v ${isoWeek(addDays(start, -7))}</a><a href="#week/${addDays(start, 7)}">v ${isoWeek(addDays(start, 7))} »</a></div></div>
     <a class="nav-arrow" href="#${nextPage("week", start)}" aria-label="Nästa sida">›</a>
   </header>`;
@@ -1434,7 +1451,8 @@ function viewMonth(ym) {
       <div class="cover-row">
         <a class="nav-arrow" href="#${prevPage("month", ym)}" aria-label="Föregående sida">‹</a>
         <div><h1 class="cover-title">${monthName(ym)} <span>${ym.slice(0, 4)}</span></h1>
-        <div class="jump"><a href="#month/${addMonths(ym, -1)}">« ${monthName(addMonths(ym, -1))}</a><a href="#month/${addMonths(ym, 1)}">${monthName(addMonths(ym, 1))} »</a></div></div>
+        <div class="jump"><a href="#month/${addMonths(ym, -1)}">« ${monthName(addMonths(ym, -1))}</a><a href="#month/${addMonths(ym, 1)}">${monthName(addMonths(ym, 1))} »</a></div>
+        <button class="link-btn" data-act="calAdd" data-date="${today().slice(0, 7) === ym ? today() : ym + "-01"}">+ lägg till i kalendern</button></div>
         <a class="nav-arrow" href="#${nextPage("month", ym)}" aria-label="Nästa sida">›</a>
       </div>
     </section>
@@ -1764,6 +1782,101 @@ document.addEventListener("pointerleave", (ev) => {
     $("#wc-cross")?.setAttribute("visibility", "hidden");
   }
 }, true);
+
+/* ---------------- Egen kalender ---------------- */
+// Händelser och möten du lägger in själv, med tid, flera dagar och upprepning.
+// Upprepning räknas ut med samma regler som Outlook-kalendern (rruleHits).
+
+const REPEATS = [
+  ["", "Upprepas inte"],
+  ["w1", "Varje vecka"],
+  ["w2", "Varannan vecka"],
+  ["m1", "Varje månad"],
+  ["y1", "Varje år"]
+];
+const repeatRule = (rep) => (rep ? { FREQ: { w: "WEEKLY", m: "MONTHLY", y: "YEARLY" }[rep[0]], INTERVAL: rep.slice(1) } : null);
+
+function ownEventsOn(date) {
+  const out = [];
+  for (const c of live("cal")) {
+    const len = c.endDate && c.endDate > c.date ? daysBetween(c.date, c.endDate) : 0;
+    // vilken startdag ger ett tillfälle som täcker "date"?
+    for (let back = 0; back <= len; back++) {
+      const start = addDays(date, -back);
+      if (start < c.date || (c.until && start > c.until) || (c.skip || []).includes(start)) continue;
+      const hit = start === c.date || (c.repeat && rruleHits(repeatRule(c.repeat), c.date, start));
+      if (!hit) continue;
+      out.push({
+        src: "egen", id: c.id, type: c.type || "event", work: !!c.work, repeat: c.repeat || "",
+        t: c.title, ad: !c.start, s: c.start ? `${start}T${c.start}` : start, e: c.end ? `${addDays(start, len)}T${c.end}` : addDays(start, len),
+        eTime: c.end || "", sd: start, ed: addDays(start, len)
+      });
+      break;
+    }
+  }
+  return out;
+}
+
+async function calDialog(date, existing) {
+  const c = existing || { type: "event", date };
+  const res = await openSheet(
+    existing ? "Ändra i kalendern" : "Lägg till i kalendern",
+    `<label class="field"><span>Vad?</span><input name="title" value="${esc(c.title || "")}" required placeholder="t.ex. Tandläkare" /></label>
+     <div class="seg cal-type" role="group">${[["event", "○ Event"], ["meeting", "△ Möte"]].map(([v, l]) => `<label class="seg-btn"><input type="radio" name="type" value="${v}" ${c.type === v ? "checked" : ""} hidden />${l}</label>`).join("")}</div>
+     <div class="row">
+       <label class="field"><span>Datum</span><input type="date" name="date" value="${c.date}" required /></label>
+       <label class="field"><span>Slutdatum (flera dagar)</span><input type="date" name="endDate" value="${c.endDate || ""}" /></label>
+     </div>
+     <div class="row">
+       <label class="field"><span>Start</span><input type="time" name="start" value="${c.start || ""}" /></label>
+       <label class="field"><span>Slut</span><input type="time" name="end" value="${c.end || ""}" /></label>
+     </div>
+     <p class="hint">Utan starttid blir det en heldag.</p>
+     <div class="row">
+       <label class="field"><span>Upprepa</span><select name="repeat">${REPEATS.map(([v, l]) => `<option value="${v}" ${(c.repeat || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+       <label class="field"><span>Till och med (valfritt)</span><input type="date" name="until" value="${c.until || ""}" /></label>
+     </div>
+     <label class="check-field"><input type="checkbox" name="work" ${c.work ? "checked" : ""} /> Jobb</label>`,
+    [{ value: "ok", label: "Spara", cls: "btn-primary" }, CLOSE]
+  );
+  if (res.action !== "ok") return;
+  const d = res.data;
+  put("cal", {
+    ...c,
+    id: c.id || "k-" + uid(),
+    title: d.title.trim(),
+    type: d.type || "event",
+    date: d.date,
+    endDate: d.endDate && d.endDate > d.date ? d.endDate : null,
+    start: d.start || null,
+    end: d.start && d.end ? d.end : null,
+    repeat: d.repeat || null,
+    until: d.repeat && d.until ? d.until : null,
+    work: !!d.work
+  });
+  toast(existing ? "Ändrat" : "Tillagt i kalendern");
+  render();
+}
+
+async function calMenu(id, date) {
+  const c = get("cal", id);
+  if (!c) return;
+  const res = await openSheet(
+    esc(c.title),
+    `<p class="hint">${c.start ? c.start + (c.end ? " till " + c.end : "") : "Heldag"}${c.repeat ? " · " + REPEATS.find(([v]) => v === c.repeat)[1].toLowerCase() : ""}</p>`,
+    [
+      { value: "edit", label: c.repeat ? "Ändra hela serien" : "Ändra" },
+      ...(c.repeat ? [{ value: "skip", label: `Ta bort bara ${niceDate(date)}`, cls: "danger" }] : []),
+      { value: "delete", label: c.repeat ? "Ta bort hela serien" : "Ta bort", cls: "danger" },
+      CLOSE
+    ]
+  );
+  if (res.action === "edit") return calDialog(c.date, c);
+  if (res.action === "skip") put("cal", { ...c, skip: [...(c.skip || []), date] });
+  else if (res.action === "delete") remove("cal", id);
+  else return;
+  render();
+}
 
 /* ---------------- Jobbdagen ---------------- */
 
@@ -2551,6 +2664,8 @@ const actions = {
     }
   },
   gcalConnect: () => gcalConnect(),
+  calAdd: (d) => calDialog(d.date || today()),
+  calMenu: (d) => calMenu(d.id, d.date),
   wcalFetch: () => wcalFetch(true),
   gcalDisconnect: () => {
     if (local.gToken && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(local.gToken, () => {});

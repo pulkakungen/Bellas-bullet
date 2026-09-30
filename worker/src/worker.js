@@ -9,7 +9,7 @@ const SENT_PREFIX = "sent:";
 
 const MORNING_MIN = 6 * 60 + 30;
 const EVENING_MIN = 20 * 60 + 30;
-const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "meta"];
+const MAPS = ["entries", "collections", "routines", "zones", "done", "days", "weeks", "workouts", "birthdays", "habits", "meals", "foods", "cal", "meta"];
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

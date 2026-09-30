@@ -728,3 +728,8 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .top-btn { white-space: nowrap; text-decoration: none; }
 .top-btn.on { color: var(--accent); font-weight: 700; }
 .log .entry:has(.top-btn) { grid-template-columns: 14px 30px 1fr auto; }
+
+/* ---------- Egen kalender ---------- */
+.cal-add { margin-top: 8px; }
+.cal-type { margin: 4px 0 8px; }
+.cal-type .seg-btn:has(input:checked) { background: var(--ink); color: var(--paper); }
