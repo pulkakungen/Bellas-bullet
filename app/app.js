@@ -990,7 +990,7 @@ function foodRow(food) {
   if (food.id && food.id.startsWith("fd-")) food = { ...food, foodId: food.id, mine: true };
   const id = "f" + Object.keys(foodResults).length;
   foodResults[id] = food;
-  const meta = food.per100 ? (food.kcal != null ? `${r0(food.kcal)} kcal/100 g` : "Livsmedelsverket") : `${r0(food.kcal)} kcal/portion`;
+  const meta = (food.per100 ? (food.kcal != null ? `${r0(food.kcal)} kcal/100 g` : "Livsmedelsverket") : `${r0(food.kcal)} kcal/portion`) + (food.qty ? ` · ${food.qty}` : "");
   return `<li><button type="button" class="food-pick" data-food-pick="${id}"><span>${esc(food.name)}</span><small>${meta}${food.mine ? " · min" : ""}</small></button></li>`;
 }
 
@@ -1145,6 +1145,37 @@ function searchFoods(items, q) {
     .map((x) => x.f);
 }
 
+// Märkesvaror från Open Food Facts: direkt från appen, annars via workern.
+const OFF_FIELDS = "code,product_name,product_name_sv,brands,quantity,nutriments,serving_quantity";
+function offProducts(data) {
+  return (data.products || [])
+    .map((p) => {
+      const n = p.nutriments || {};
+      const kcal = n["energy-kcal_100g"] ?? (n.energy_100g ? n.energy_100g / 4.184 : null);
+      const name = p.product_name_sv || p.product_name;
+      if (kcal == null || !name) return null;
+      const brand = (p.brands || "").split(",")[0].trim();
+      return {
+        name: brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${name}, ${brand}` : name,
+        per100: true, ean: p.code, kcal, p: n.proteins_100g, f: n.fat_100g, c: n.carbohydrates_100g,
+        grams: +p.serving_quantity || null, qty: p.quantity || ""
+      };
+    })
+    .filter(Boolean);
+}
+async function offSearch(q) {
+  const terms = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w)).join(" ");
+  if (!terms) return [];
+  const direct = `https://se.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n&fields=${OFF_FIELDS}&search_terms=${encodeURIComponent(terms)}`;
+  try {
+    const res = await fetch(direct);
+    if (!res.ok) throw new Error(res.status);
+    return offProducts(await res.json());
+  } catch (e) {
+    return offProducts(await workerGet("/off?q=" + encodeURIComponent(terms)));
+  }
+}
+
 async function runFoodSearch(q) {
   foodCtx.amount = parseAmount(q);
   const out = $("#food-results");
@@ -1152,24 +1183,24 @@ async function runFoodSearch(q) {
   foodResults = {};
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const mine = live("foods").filter((f) => words.every((w) => f.name.toLowerCase().includes(w)));
-  let html = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
-  out.innerHTML = html + '<p class="hint">Söker i Livsmedelsverket...</p>';
-  try {
-    let found;
+  const mineHtml = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
+  out.innerHTML = mineHtml + '<p class="hint">Söker bland produkter och i Livsmedelsverket...</p>';
+  const lmvTask = (async () => {
     try {
-      found = searchFoods(await lmvList(), q);
+      return { list: searchFoods(await lmvList(), q) };
     } catch (e) {
       // listan gick inte att hämta (t.ex. äldre worker): använd workerns sökning
       const data = await workerGet("/food/search?q=" + encodeURIComponent(q)).catch(() => null);
-      if (!data || data.error) throw new Error((data && data.error) || e.message);
-      found = data.results || [];
+      if (!data || data.error) return { error: (data && data.error) || e.message };
+      return { list: data.results || [] };
     }
-    if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
-    const lmv = found.map((r) => ({ name: r.namn, lmv: r.nummer, per100: true, kcal: null }));
-    html += `<h3>Livsmedelsverket</h3><ul class="food-results">${lmv.map(foodRow).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`;
-  } catch (e) {
-    html += `<p class="hint error">${esc(e.message)}</p>`;
-  }
+  })();
+  const offTask = offSearch(q).then((list) => ({ list }), (e) => ({ error: "Produktsöket svarar inte just nu." }));
+  const [lmv, off] = await Promise.all([lmvTask, offTask]);
+  if ($("#food-q")?.value.trim() !== q) return; // en nyare sökning har tagit över
+  let html = mineHtml;
+  html += `<h3>Produkter</h3>${off.error ? `<p class="hint error">${esc(off.error)}</p>` : `<ul class="food-results">${off.list.map(foodRow).join("") || '<li class="empty">Inga produkter hittades. Prova streckkoden.</li>'}</ul>`}`;
+  html += `<h3>Livsmedelsverket</h3>${lmv.error ? `<p class="hint error">${esc(lmv.error)}</p>` : `<ul class="food-results">${lmv.list.map((r) => foodRow({ name: r.namn, lmv: r.nummer, per100: true, kcal: null })).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`}`;
   out.innerHTML = html;
 }
 
