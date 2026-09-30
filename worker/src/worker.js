@@ -453,6 +453,11 @@ function morningMessage(state, date) {
   const zone = zoneForWeek(state, date);
   if (zone) lines.push("Veckans zon: " + zone.name);
 
+  // måndagar: påminn om att läsa in jobbkalendern om filen är gammal
+  const wcal = (state.meta || {}).wcal;
+  if (new Date(date + "T12:00:00Z").getUTCDay() === 1 && wcal && wcal.fromFile && Date.now() - (wcal.fetchedAt || 0) > 6 * 864e5) {
+    lines.push("Dags att läsa in jobbkalendern.");
+  }
   lines.push("Ta morgonmedicinen.");
   return { title: "God morgon", body: lines.join("\n"), tag: "bullet-morgon" };
 }

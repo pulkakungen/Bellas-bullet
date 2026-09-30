@@ -746,6 +746,11 @@ function viewDay(date) {
     <a class="nav-arrow" href="#${nextPage("day", date)}" aria-label="Nästa sida">›</a>
   </header>`;
 
+  const wcal = get("meta", "wcal");
+  if (date === t && wcal && wcal.fromFile && Date.now() - wcal.fetchedAt > 6 * 864e5) {
+    const days = Math.floor((Date.now() - wcal.fetchedAt) / 864e5);
+    html += `<div class="banner"><span>Jobbkalendern lästes in för ${days} dagar sedan. Dags att läsa in en ny fil.</span><a class="btn-small" href="#settings">Läs in</a></div>`;
+  }
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const openW = date === t && isWorkday(t) && nowMin >= workEndMinutes(t) ? openWork(t).length : 0;
   if (openW) {
