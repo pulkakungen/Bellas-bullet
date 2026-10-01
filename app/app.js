@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-09-30.4";
+const APP_VERSION = "2026-10-01.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -816,20 +816,6 @@ function viewDay(date) {
   html += block("Logg", list(entries.map((e) => entryRow(e)), "Tomt blad. Skriv nedan.") + logForm({ date }, "Skriv... (o event, m möte, . notering)"));
 
   const habits = live("habits").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const skin = skinStatus(date);
-  if (skin.steps.length) {
-    html += block(
-      "Hudvård",
-      `<p class="hint">${WD_LONG[d.getDay()]}skväll · ${skin.all ? "klart för ikväll" : `${skin.done} av ${skin.steps.length} steg`}</p>
-       <ol class="skin-steps">${skin.steps
-         .map((st) => {
-           const on = isDone(skinKey(st), date);
-           return `<li class="${on ? "is-done" : ""}"><button class="check" data-act="toggleSkin" data-step="${esc(st)}" data-date="${date}" aria-label="Markera ${esc(st)}">${sym(on ? "done" : "open")}</button><span class="c-name">${esc(st)}</span></li>`;
-         })
-         .join("")}</ol>
-       ${skin.all ? "" : `<button class="link-btn left" data-act="skinAll" data-date="${date}">bocka alla</button>`}`
-    );
-  }
   if (habits.length) {
     html += block(
       "Vanor",
@@ -844,6 +830,20 @@ function viewDay(date) {
   html += choresBlock(date);
   html += foodBlock(date);
   html += trainingBlock(date);
+  const skin = skinStatus(date);
+  if (skin.steps.length) {
+    html += block(
+      "Hudvård",
+      `<p class="hint">${WD_LONG[d.getDay()]}skväll · ${skin.all ? "klart för ikväll" : `${skin.done} av ${skin.steps.length} steg`}</p>
+       <ol class="skin-steps">${skin.steps
+         .map((st) => {
+           const on = isDone(skinKey(st), date);
+           return `<li class="${on ? "is-done" : ""}"><button class="check" data-act="toggleSkin" data-step="${esc(st)}" data-date="${date}" aria-label="Markera ${esc(st)}">${sym(on ? "done" : "open")}</button><span class="c-name">${esc(st)}</span></li>`;
+         })
+         .join("")}</ol>
+       ${skin.all ? "" : `<button class="link-btn left" data-act="skinAll" data-date="${date}">bocka alla</button>`}`
+    );
+  }
   html += wellbeingBlock(date);
   return html;
 }
