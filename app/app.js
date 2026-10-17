@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-01.1";
+const APP_VERSION = "2026-10-17.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -168,11 +168,11 @@ function addSpecials() {
 }
 
 // Bellas hudvårdsrutin (kväll), en variant per veckodag. 0 = söndag.
-const BASE = ["Vitamin C Cleansing Balm", "Nivea Cleansing Cream Caring"];
+const BASE = ["Vitamin C Cleansing Balm", "The Inkey List Hydrating Cream to Milk Cleanser"];
 const EYES = ["The Ordinary Volufiline", "Biovène Hyaluronic Eye Filler", "Xlash Pro Eyelash Serum"];
 const LUMENE = "Lumene Nordic Hydra Aqua Lumenessence Beauty Lotion";
 const Q10 = "Cien Q10 Night Mask";
-const GLOW = "Lumene Nordic-C Glow Moisturizer";
+const GLOW = "Lumene Nordic Bloom Vitality Rich Day Cream";
 const SKINCARE_PRESET = {
   1: [...BASE, LUMENE, "COSRX Snail 96 Mucin", ...EYES, Q10],
   2: [...BASE, LUMENE, "Elizabeth Arden Ceramide Capsules Daily Youth", ...EYES, GLOW],
@@ -183,7 +183,21 @@ const SKINCARE_PRESET = {
   0: [...BASE, LUMENE, "Elizabeth Arden Ceramide Capsules Daily Youth", ...EYES, Q10]
 };
 const skincare = () => get("meta", "skincare");
-const skinStepsOn = (date) => (skincare()?.days?.[parseYmd(date).getDay()] || []);
+// Byts rutinen sparas den gamla i prev, så dagar bakåt visar det du faktiskt gjorde.
+const skinStepsOn = (date) => {
+  const sc = skincare();
+  const days = sc?.prev && date <= sc.prev.until ? sc.prev.days : sc?.days;
+  return days?.[parseYmd(date).getDay()] || [];
+};
+// Ny rutin från 18 oktober 2026: ny rengöring och ny dagkräm.
+const SKIN_SWAP = { "Nivea Cleansing Cream Caring": BASE[1], "Lumene Nordic-C Glow Moisturizer": GLOW };
+function migrateSkincare() {
+  const sc = skincare();
+  if (!sc || sc.v >= 2) return;
+  const days = {};
+  for (const [wd, steps] of Object.entries(sc.days || {})) days[wd] = steps.map((st) => SKIN_SWAP[st] || st);
+  put("meta", { ...sc, v: 2, days, prev: { until: "2026-10-17", days: sc.days } });
+}
 const skinKey = (step) => "sk:" + step;
 function skinStatus(date) {
   const steps = skinStepsOn(date);
@@ -581,6 +595,7 @@ let showAllChores = false;
 let showPastEvents = false;
 
 function render() {
+  migrateSkincare();
   const { view, arg } = route();
   const t = today();
   const views = {
