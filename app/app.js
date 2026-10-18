@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.7";
+const APP_VERSION = "2026-10-18.8";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -618,7 +618,7 @@ function render() {
     settings: () => viewSettings()
   };
   const app = $("#app");
-  const pageArg = { day: arg || t, week: weekStart(arg || t), month: arg || t.slice(0, 7) }[view] || arg || "";
+  const pageArg = { day: arg || t, week: weekStart(arg || t), month: arg || t.slice(0, 7), links: arg !== undefined ? decodeURIComponent(arg) : currentList() }[view] ?? arg ?? "";
   app.innerHTML = (views[view] || views.day)() + `<span class="page-no">${pageNumber(view, pageArg)}</span>`;
   if (turnDir) {
     app.classList.remove("turn-next", "turn-prev");
@@ -658,8 +658,23 @@ function prevPage(view, arg) {
 
 // Antal måndagar från 1 januari till och med datumet.
 // Sidnummer som i en riktig bok: index 1, nyckel 2, framtidslogg 3, sedan löpande
-// från månaden då dagboken började. Varje månad: månadssida, sedan veckosida före
-// varje måndag och en sida per dag. Ingen nollställning vid nyår.
+// från månaden då dagboken började. Varje månad: månadssida, veckosida före varje
+// måndag och en sida per dag. En samling får sidan efter dagen den skapades, och
+// sidorna efter den flyttas ett steg. Ingen nollställning vid nyår.
+const tsDay = (ms) => (ms > 1.5e12 && ms < 4e12 ? ymd(new Date(ms)) : null);
+const idTime = (id) => parseInt(String(id).replace(/^[a-z]+-/, "").slice(0, 8), 36);
+function collectionPages() {
+  const out = [];
+  const firstOrder = (list) => Math.min(...list.map((e) => e.order || Infinity));
+  for (const c of live("collections")) out.push({ key: "coll:" + c.id, ms: idTime(c.id) || firstOrder(live("entries").filter((e) => e.coll === c.id)) });
+  const bd = live("entries").filter((e) => e.coll === BRAINDUMP.id);
+  if (bd.length) out.push({ key: "coll:" + BRAINDUMP.id, ms: firstOrder(bd) });
+  const links = linkEntries();
+  if (links.length) out.push({ key: "links:", ms: firstOrder(links) });
+  const created = get("meta", "linklists")?.created || {};
+  for (const g of linkLists()) out.push({ key: "links:" + g, ms: created[g] || firstOrder(links.filter((e) => e.link.group === g)) });
+  return out.map((x) => ({ ...x, day: tsDay(x.ms) || today() })).sort((a, b) => a.ms - b.ms);
+}
 function journalStart() {
   let min = null;
   const see = (d) => {
@@ -668,6 +683,7 @@ function journalStart() {
   for (const e of live("entries")) see(e.date || (e.month ? e.month + "-01" : null));
   for (const m of live("meals")) see(m.date);
   for (const d of live("days")) see(d.id);
+  for (const c of live("collections")) see(tsDay(idTime(c.id)));
   return (min || today()).slice(0, 7) + "-01";
 }
 const mondaysBetween = (a, b) => {
@@ -675,21 +691,30 @@ const mondaysBetween = (a, b) => {
   return firstMon > b ? 0 : Math.floor(daysBetween(firstMon, b) / 7) + 1;
 };
 const monthsBetween = (a, b) => (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
-// Sidan för en dag räknat från start: månadssidor + veckosidor + dagar.
+// Dagens sida utan samlingar: månadssidor + veckosidor + dagar sedan start.
 const dayPage = (start, d) => 3 + monthsBetween(start, d) + 1 + mondaysBetween(start, d) + daysBetween(start, d) + 1;
 
 function pageNumber(view, arg) {
   const fixed = { index: 1, key: 2, future: 3 }[view];
   if (fixed) return fixed;
-  if (!["day", "week", "month"].includes(view) || !arg) return "";
   const start = journalStart();
+  const colls = collectionPages().map((c) => ({ ...c, day: c.day < start ? start : c.day }));
+  const before = (d) => colls.filter((c) => c.day < d).length;
+  if (view === "coll" || view === "links") {
+    const key = view === "coll" ? "coll:" + arg : "links:" + (arg || "");
+    const i = colls.findIndex((c) => c.key === key);
+    if (i < 0) return "";
+    const c = colls[i];
+    return dayPage(start, c.day) + before(c.day) + colls.slice(0, i).filter((x) => x.day === c.day).length + 1;
+  }
+  if (!["day", "week", "month"].includes(view) || !arg) return "";
   if (view === "month") {
     const first = arg.slice(0, 7) + "-01";
     if (first < start) return "";
-    return first === start ? 4 : dayPage(start, addDays(first, -1)) + 1;
+    return first === start ? 4 : dayPage(start, addDays(first, -1)) + before(first) + 1;
   }
   if (arg < start) return "";
-  return view === "day" ? dayPage(start, arg) : dayPage(start, arg) - 1;
+  return dayPage(start, arg) + before(arg) - (view === "week" ? 1 : 0);
 }
 
 // Svep åt sidan för att bläddra, som i en bok.
@@ -1813,9 +1838,9 @@ function viewIndex() {
     `<section class="block"><h2>Sök</h2><input type="search" id="search" data-change="search" value="${esc(searchQuery)}" placeholder="Sök i allt du skrivit..." /><p class="hint">Tips: skriv bara <code>?</code> för allt du ska kolla upp, <code>!</code> för deadlines.</p><div id="search-results">${searchResults()}</div></section>` +
     block(
       "Samlingar",
-      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>${st(count(c.id))}</span></li>`).join("")}
-        <li><a href="#links/">Länkar</a><span class="dots"></span><span>${st(linkEntries().length, "länk", "länkar")}</span></li>
-        ${linkLists().map((g) => `<li class="sub"><a href="#links/${encodeURIComponent(g)}">${esc(g)}</a><span class="dots"></span><span>${st(linkEntries().filter((e) => e.link.group === g).length, "länk", "länkar")}</span></li>`).join("")}
+      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>s. ${pageNumber("coll", c.id)}</span></li>`).join("")}
+        <li><a href="#links/">Länkar</a><span class="dots"></span><span>${linkEntries().length ? "s. " + pageNumber("links", "") : ""}</span></li>
+        ${linkLists().map((g) => `<li class="sub"><a href="#links/${encodeURIComponent(g)}">${esc(g)}</a><span class="dots"></span><span>s. ${pageNumber("links", g)}</span></li>`).join("")}
         <li class="sub"><button class="link-btn" data-act="newLinkList">+ ny länklista</button></li></ul>
        <form class="log-input-row" data-form="newColl" autocomplete="off"><input name="name" placeholder="Ny samling, t.ex. Böcker att läsa" /><button class="btn-small">+</button></form>`
     ) +
@@ -1824,7 +1849,7 @@ function viewIndex() {
       `<ul class="index-list">
         <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length ? openWork(t).length + " öppna" : ""}</span></li>
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
-        <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${st(live("entries").filter((e) => e.coll === "c-braindump").length)}</span></li>
+        <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${pageNumber("coll", "c-braindump") ? "s. " + pageNumber("coll", "c-braindump") : ""}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>s. 3</span></li>
         <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
         <li><a href="#gratitude">Tacksamhet</a><span class="dots"></span><span>${st(live("days").filter((d) => d.grateful).length, "dag", "dagar")}</span></li>
@@ -1920,7 +1945,12 @@ const linkLists = () => {
   const names = new Set([...(get("meta", "linklists")?.names || []), ...linkEntries().map((e) => e.link.group).filter(Boolean)]);
   return [...names].sort((a, b) => a.localeCompare(b, "sv"));
 };
-const saveLinkLists = (names) => put("meta", { id: "linklists", names: [...new Set(names)].filter(Boolean) });
+const saveLinkLists = (names) => {
+  const old = get("meta", "linklists") || {};
+  const created = { ...(old.created || {}) };
+  names.forEach((n) => (created[n] ??= Date.now()));
+  put("meta", { id: "linklists", names: [...new Set(names)].filter(Boolean), created });
+};
 // Vald lista: den du tittar på och sparar i. Tom = Alla.
 const currentList = () => (linkLists().includes(local.linkGroup) ? local.linkGroup : "");
 
@@ -3130,6 +3160,8 @@ const actions = {
     const name = (res.data.name || "").trim();
     if (res.action === "ok" && name && name !== cur) {
       linkEntries().filter((e) => e.link.group === cur).forEach((e) => put("entries", { ...e, link: { ...e.link, group: name } }));
+      const ll = get("meta", "linklists") || {};
+      if (ll.created?.[cur]) put("meta", { ...ll, created: { ...ll.created, [name]: ll.created[cur] } });
       saveLinkLists(linkLists().map((g) => (g === cur ? name : g)));
       return go("links/" + encodeURIComponent(name));
     }
