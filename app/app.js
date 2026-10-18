@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-17.1";
+const APP_VERSION = "2026-10-18.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1007,7 +1007,9 @@ function foodRow(food) {
   if (food.id && food.id.startsWith("fd-")) food = { ...food, foodId: food.id, mine: true };
   const id = "f" + Object.keys(foodResults).length;
   foodResults[id] = food;
-  const meta = (food.per100 ? (food.kcal != null ? `${r0(food.kcal)} kcal/100 g` : "Livsmedelsverket") : `${r0(food.kcal)} kcal/portion`) + (food.qty ? ` · ${food.qty}` : "");
+  const meta = food.noKcal
+    ? "saknar näringsvärden, tryck och fyll i från förpackningen"
+    : (food.per100 ? (food.kcal != null ? `${r0(food.kcal)} kcal/100 g` : "Livsmedelsverket") : `${r0(food.kcal)} kcal/portion`) + (food.recipe ? " · hemlagat" : "") + (food.qty ? ` · ${food.qty}` : "");
   return `<li><button type="button" class="food-pick" data-food-pick="${id}"><span>${esc(food.name)}</span><small>${meta}${food.mine ? " · min" : ""}</small></button></li>`;
 }
 
@@ -1020,24 +1022,36 @@ async function workerGet(path) {
 
 let foodCtx = null; // { date, meal }
 let foodTimer;
-async function openFoodSearch(date, meal) {
+async function openFoodSearch(date, meal, opts = {}) {
   await closeSheet();
-  foodCtx = { date, meal };
+  foodCtx = { date, meal, onPick: opts.onPick || null };
   foodResults = {};
   const dlg = sheet();
-  const label = MEALS.find(([k]) => k === meal)[1];
+  const label = opts.onPick ? "Ingrediens" : MEALS.find(([k]) => k === meal)?.[1] || "Mat";
   const mine = live("foods").sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 12);
   dlg.innerHTML = `<form method="dialog" class="sheet-form food-sheet">
     <p class="sheet-title">${label}</p>
     <input type="search" id="food-q" placeholder="Sök livsmedel, t.ex. havregryn" autocomplete="off" />
-    <div class="btn-row">
-      <button type="button" class="btn-small ghost" data-food-act="scan">Skanna streckkod</button>
+    <div class="btn-row">${
+      opts.onPick
+        ? '<button type="button" class="btn-small ghost" data-food-act="manual">Skriv in ingrediens</button>'
+        : `<button type="button" class="btn-small ghost" data-food-act="scan">Skanna streckkod</button>
       <button type="button" class="btn-small ghost" data-food-act="manual">Skriv in själv</button>
-    </div>
-    <div id="food-results">${mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : '<p class="hint">Sök i Livsmedelsverkets databas, skanna en förpackning eller skriv in själv. Det du sparar hamnar under Mina maträtter.</p>'}</div>
+      <button type="button" class="btn-small ghost" data-food-act="recipe">Hemlagat</button>`
+    }</div>
+    <div id="food-results">${mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : '<p class="hint">Sök, skanna en förpackning eller skriv in värdena själv. Lagar du mat från grunden, välj Hemlagat. Det du sparar hamnar under Mina maträtter.</p>'}</div>
     <div class="sheet-buttons"><button value="close" class="ghost">Stäng</button></div>
   </form>`;
-  dlg.onclose = null;
+  dlg.returnValue = "";
+  // Stängs ingredienssöket utan val fortsätter receptet som det var.
+  dlg.onclose = opts.onPick
+    ? () => {
+        if (dlg.returnValue === "close" && foodCtx?.onPick === opts.onPick) {
+          foodCtx.onPick = null;
+          opts.onPick(null);
+        }
+      }
+    : null;
   dlg.showModal();
   if (!("ontouchstart" in window)) dlg.querySelector("#food-q").focus();
 }
@@ -1045,10 +1059,10 @@ async function openFoodSearch(date, meal) {
 // "2 dl", "150 g", "1,5 l" först i sökningen blir förvald mängd i gram
 // (1 dl räknas som 100 g, vilket stämmer bra för yoghurt, mjölk och gröt).
 function parseAmount(q) {
-  const m = q.trim().match(/^(\d+(?:[.,]\d+)?)\s*(g|gram|dl|ml|cl|l)\b/i);
+  const m = q.trim().match(/^(\d+(?:[.,]\d+)?)\s*(g|gram|dl|ml|cl|l|msk|tsk)\b/i);
   if (!m) return null;
   const n = parseFloat(m[1].replace(",", "."));
-  return Math.round(n * { g: 1, gram: 1, ml: 1, cl: 10, dl: 100, l: 1000 }[m[2].toLowerCase()]);
+  return Math.round(n * { g: 1, gram: 1, ml: 1, cl: 10, dl: 100, l: 1000, msk: 14, tsk: 5 }[m[2].toLowerCase()]);
 }
 
 // Livsmedelsverkets lista hämtas en gång via workern och sparas i telefonen
@@ -1173,15 +1187,16 @@ function offProducts(data) {
       const n = p.nutriments || {};
       const kcal = n["energy-kcal_100g"] ?? (n.energy_100g ? n.energy_100g / 4.184 : null);
       const name = p.product_name_sv || p.product_name;
-      if (kcal == null || !name) return null;
+      if (!name) return null;
       const brand = (p.brands || "").split(",")[0].trim();
       return {
         name: brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${name}, ${brand}` : name,
         per100: true, ean: p.code, kcal, p: n.proteins_100g, f: n.fat_100g, c: n.carbohydrates_100g,
-        grams: +p.serving_quantity || null, qty: p.quantity || ""
+        grams: +p.serving_quantity || null, qty: p.quantity || "", noKcal: kcal == null
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => a.noKcal - b.noKcal); // varor utan näringsvärden sist, du kan fylla i dem
 }
 async function offSearch(q) {
   const terms = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w)).join(" ");
@@ -1198,7 +1213,7 @@ async function offSearch(q) {
   };
   // Först det som säljs i Sverige, blir det få träffar letar vi i hela världen.
   const se = await one("se");
-  if (se.length >= 6) return se;
+  if (se.filter((f) => !f.noKcal).length >= 6) return se;
   const world = await one("world").catch(() => []);
   const seen = new Set(se.map((f) => f.ean));
   return [...se, ...world.filter((f) => !seen.has(f.ean))];
@@ -1209,8 +1224,14 @@ async function runFoodSearch(q) {
   const out = $("#food-results");
   if (!out) return;
   foodResults = {};
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const mine = live("foods").filter((f) => words.every((w) => f.name.toLowerCase().includes(w)));
+  const words = norm(q).split(/\s+/).filter((w) => w.length > 1 && !/^\d/.test(w) && !STOP.has(w));
+  const mine = words.length
+    ? live("foods").filter((f) => {
+        const n = norm(f.name);
+        const t = n.split(/\s+/).filter(Boolean);
+        return words.every((w) => wordMatch(w, n, t) >= 0.7);
+      })
+    : [];
   const mineHtml = mine.length ? `<h3>Mina maträtter</h3><ul class="food-results">${mine.map(foodRow).join("")}</ul>` : "";
   out.innerHTML = mineHtml + '<p class="hint">Söker bland produkter och i Livsmedelsverket...</p>';
   const lmvTask = (async () => {
@@ -1229,20 +1250,32 @@ async function runFoodSearch(q) {
   let html = mineHtml;
   html += `<h3>Produkter</h3>${off.error ? `<p class="hint error">${esc(off.error)}</p>` : `<ul class="food-results">${off.list.map(foodRow).join("") || '<li class="empty">Inga produkter hittades. Prova streckkoden.</li>'}</ul>`}`;
   html += `<h3>Livsmedelsverket</h3>${lmv.error ? `<p class="hint error">${esc(lmv.error)}</p>` : `<ul class="food-results">${lmv.list.map((r) => foodRow({ name: r.namn, lmv: r.nummer, per100: true, kcal: null })).join("") || '<li class="empty">Inga träffar.</li>'}</ul>`}`;
+  html += `<p class="hint food-miss">Hittar du inte rätt? <button type="button" class="link-btn" data-food-act="manual">Skriv in värdena från förpackningen</button>${foodCtx?.onPick ? "" : ' eller räkna ut <button type="button" class="link-btn" data-food-act="recipe">hemlagat</button>'}.</p>`;
   out.innerHTML = html;
 }
 
 async function pickFood(food) {
+  const onPick = foodCtx?.onPick;
+  if (onPick) {
+    foodCtx.onPick = null;
+    sheet().onclose = null;
+  }
   await closeSheet();
+  if (food.noKcal) {
+    const pre = { name: food.name, ean: food.ean, per100: true };
+    return onPick ? onPick(await manualIngredient(pre)) : manualFood(pre);
+  }
   if (food.lmv && food.kcal == null) {
     try {
       const n = await workerGet("/food/" + food.lmv);
       if (n.error) throw new Error(n.error);
       Object.assign(food, { kcal: n.kcal, p: n.p, f: n.f, c: n.c });
     } catch (e) {
-      return toast(e.message);
+      toast(e.message);
+      return onPick && onPick(null);
     }
   }
+  if (onPick) return onPick(await ingredientAmount(food));
   portionDialog(food);
 }
 
@@ -1285,32 +1318,130 @@ async function portionDialog(food, existing) {
   render();
 }
 
-async function manualFood() {
+const num = (v) => Math.max(0, parseFloat(String(v ?? "").replace(",", ".")) || 0);
+const scaleMacros = (x, k) => ({ kcal: (x.kcal || 0) * k, p: (x.p || 0) * k, f: (x.f || 0) * k, c: (x.c || 0) * k });
+const decField = (name, label, val) => `<label class="field"><span>${label}</span><input name="${name}" type="text" inputmode="decimal" value="${val ?? ""}" /></label>`;
+const macroFields = (v = {}) =>
+  `<div class="row">${decField("kcal", "Kalorier", v.kcal)}${decField("p", "Protein g", v.p)}</div><div class="row">${decField("f", "Fett g", v.f)}${decField("c", "Kolhydrater g", v.c)}</div>`;
+// Söktexten utan mängd först: "2 dl musli" blir "musli".
+const queryName = (q) => String(q || "").trim().replace(/^\d+(?:[.,]\d+)?\s*(g|gram|dl|ml|cl|l|msk|tsk)\b\s*/i, "");
+
+// Egna värden: per 100 g från förpackningen (då anges mängden) eller för hela portionen.
+async function manualValues(title, pre = {}, opts = {}) {
+  const per100 = pre.per100 ?? true;
   const res = await openSheet(
-    "Skriv in själv",
-    `<label class="field"><span>Vad åt du?</span><input name="name" required /></label>
-     <div class="row">
-       <label class="field"><span>Kalorier</span><input name="kcal" type="number" inputmode="decimal" min="0" step="any" required /></label>
-       <label class="field"><span>Protein g</span><input name="p" type="number" inputmode="decimal" min="0" step="any" /></label>
+    title,
+    `<label class="field"><span>${opts.nameLabel || "Vad åt du?"}</span><input name="name" value="${esc(pre.name || "")}" required /></label>
+     <div class="basis" role="radiogroup">
+       <label><input type="radio" name="basis" value="100" ${per100 ? "checked" : ""} /> Per 100 g</label>
+       <label><input type="radio" name="basis" value="portion" ${per100 ? "" : "checked"} /> ${opts.ingredient ? "Totalt" : "Per portion"}</label>
      </div>
-     <div class="row">
-       <label class="field"><span>Fett g</span><input name="f" type="number" inputmode="decimal" min="0" step="any" /></label>
-       <label class="field"><span>Kolhydrater g</span><input name="c" type="number" inputmode="decimal" min="0" step="any" /></label>
-     </div>
-     <label class="check-field"><input type="checkbox" name="save" checked /> Spara bland mina maträtter</label>`,
-    [{ value: "ok", label: "Lägg till", cls: "btn-primary" }, CLOSE]
+     <p class="hint" id="basis-hint">${per100 ? "Skriv av näringsvärdet per 100 g från förpackningen." : "Värdena för allt tillsammans."}</p>
+     ${macroFields(pre)}
+     <label class="field" id="grams-field" ${per100 ? "" : "hidden"}><span>${opts.ingredient ? "Gram i hela satsen" : "Hur många gram åt du?"}</span><input name="grams" type="text" inputmode="decimal" value="${pre.grams || 100}" /></label>
+     ${opts.ingredient ? "" : '<label class="check-field"><input type="checkbox" name="save" checked /> Spara bland mina maträtter</label>'}`,
+    [{ value: "ok", label: opts.okLabel || "Lägg till", cls: "btn-primary" }, CLOSE]
   );
-  if (res.action !== "ok") return;
-  const n = (k) => parseFloat(String(res.data[k] || 0).replace(",", ".")) || 0;
-  const food = { name: res.data.name.trim(), per100: false, kcal: n("kcal"), p: n("p"), f: n("f"), c: n("c") };
+  if (res.action !== "ok") return null;
+  const d = res.data;
+  const food = { name: d.name.trim(), per100: d.basis === "100", kcal: num(d.kcal), p: num(d.p), f: num(d.f), c: num(d.c), ean: pre.ean || null };
+  return { food, amount: food.per100 ? num(d.grams) || 100 : 1, save: !!d.save };
+}
+
+async function manualFood(pre = {}) {
+  const r = await manualValues("Skriv in själv", pre);
+  if (!r) return;
+  const { food, amount } = r;
+  const grams = food.per100 ? amount : null;
   let foodId = null;
-  if (res.data.save) {
+  if (r.save) {
     foodId = "fd-" + uid();
-    put("foods", { id: foodId, ...food, used: 1 });
+    put("foods", { id: foodId, ...food, grams, used: 1 });
   }
-  put("meals", { id: "m-" + uid(), date: foodCtx.date, meal: foodCtx.meal, order: Date.now(), name: food.name, kcal: food.kcal, p: food.p, f: food.f, c: food.c, portions: 1, src: { ...food, foodId } });
-  toast(`${food.name}: ${r0(food.kcal)} kcal`);
+  const v = scaleMacros(food, food.per100 ? amount / 100 : 1);
+  put("meals", { id: "m-" + uid(), date: foodCtx.date, meal: foodCtx.meal, order: Date.now(), name: food.name, ...v, grams, portions: food.per100 ? null : 1, src: { ...food, grams, foodId } });
+  toast(`${food.name}: ${r0(v.kcal)} kcal`);
   render();
+}
+
+// Hemlagat: ingredienserna för hela satsen delas på antal portioner och sparas som en maträtt.
+const recipeTotal = (items) => items.reduce((a, it) => ({ kcal: a.kcal + it.kcal, p: a.p + it.p, f: a.f + it.f, c: a.c + it.c }), { kcal: 0, p: 0, f: 0, c: 0 });
+const ingredient = (food, amount) => ({
+  name: food.name,
+  label: food.per100 ? r0(amount) + " g" : amount === 1 ? "allt" : amount + " portioner",
+  ...scaleMacros(food, food.per100 ? amount / 100 : amount)
+});
+
+async function recipeEditor(draft, opts = {}) {
+  draft = { name: "", portions: 1, items: [], ...draft };
+  const ctx = opts.log && foodCtx ? { date: foodCtx.date, meal: foodCtx.meal } : null;
+  for (;;) {
+    const tot = recipeTotal(draft.items);
+    const portions = draft.portions || 1;
+    const res = await openSheet(
+      "Hemlagat",
+      `<label class="field"><span>Rättens namn</span><input name="name" value="${esc(draft.name)}" placeholder="t.ex. Trahana med Oumph" /></label>
+       <label class="field"><span>Antal portioner i satsen</span><input name="portions" type="text" inputmode="decimal" value="${portions}" /></label>
+       <h3>Ingredienser för hela satsen</h3>
+       <ul class="recipe-items">${
+         draft.items
+           .map((it, i) => `<li><span class="ri-name">${esc(it.name)} <small>${esc(it.label)}</small></span><span class="hint">${r0(it.kcal)} kcal</span><button value="rm:${i}" formnovalidate class="ri-rm" aria-label="Ta bort ${esc(it.name)}">✕</button></li>`)
+           .join("") || '<li class="empty">Lägg till allt som gick i, även olja och smör.</li>'
+       }</ul>
+       <div class="btn-row"><button value="search" formnovalidate class="btn-small ghost">+ Sök ingrediens</button><button value="manual" formnovalidate class="btn-small ghost">+ Skriv in ingrediens</button></div>
+       ${draft.items.length ? `<p class="hint">Hela satsen: ${macroLine(tot)}</p><p class="plan-preview">Per portion: ${macroLine(scaleMacros(tot, 1 / portions))}</p>` : ""}`,
+      [{ value: "save", label: "Spara rätten", cls: "btn-primary" }, CLOSE]
+    );
+    draft.name = (res.data.name ?? draft.name).trim();
+    draft.portions = num(res.data.portions) || 1;
+    const a = res.action;
+    if (a.startsWith("rm:")) {
+      draft.items.splice(+a.slice(3), 1);
+      continue;
+    }
+    if (a === "search" || a === "manual") {
+      foodCtx = { ...(ctx || {}) };
+      const it = a === "search" ? await pickIngredient() : await manualIngredient();
+      if (it) draft.items.push(it);
+      continue;
+    }
+    if (a !== "save") return;
+    if (!draft.name || !draft.items.length) {
+      toast(draft.name ? "Lägg till minst en ingrediens" : "Ge rätten ett namn");
+      continue;
+    }
+    const id = draft.foodId && get("foods", draft.foodId) ? draft.foodId : "fd-" + uid();
+    const prev = get("foods", id) || {};
+    const food = { ...prev, id, name: draft.name, per100: false, ...scaleMacros(tot, 1 / draft.portions), grams: null, recipe: { portions: draft.portions, items: draft.items }, used: prev.used || 0 };
+    put("foods", food);
+    if (ctx) {
+      foodCtx = ctx;
+      return portionDialog({ ...food, foodId: id, mine: true });
+    }
+    toast(`${draft.name} sparad bland mina maträtter`);
+    return render();
+  }
+}
+
+function pickIngredient() {
+  return new Promise((resolve) => openFoodSearch(foodCtx?.date, foodCtx?.meal, { onPick: resolve }));
+}
+async function ingredientAmount(food) {
+  const per100 = !!food.per100;
+  const amt = per100 ? foodCtx?.amount || food.grams || 100 : 1;
+  const res = await openSheet(
+    esc(food.name),
+    `<p class="hint">${per100 ? "Per 100 g" : "Per portion"}: ${macroLine(food)}</p>
+     <label class="field"><span>${per100 ? "Gram i hela satsen" : "Portioner"}</span><input type="text" name="amount" id="portion-amount" inputmode="decimal" value="${amt}" required /></label>
+     <p class="plan-preview" id="portion-preview">${macroLine(scaleMacros(food, per100 ? amt / 100 : amt))}</p>
+     <input type="hidden" id="portion-food" value="${esc(JSON.stringify({ per100, kcal: food.kcal, p: food.p, f: food.f, c: food.c }))}" />`,
+    [{ value: "ok", label: "Lägg i receptet", cls: "btn-primary" }, CLOSE]
+  );
+  return res.action === "ok" ? ingredient(food, num(res.data.amount)) : null;
+}
+async function manualIngredient(pre = {}) {
+  const r = await manualValues("Ingrediens", pre, { ingredient: true, nameLabel: "Ingrediens", okLabel: "Lägg i receptet" });
+  return r ? ingredient(r.food, r.amount) : null;
 }
 
 // Streckkod: webbläsarens inbyggda läsare om den finns, annars ZXing. Värden från Open Food Facts.
@@ -1390,11 +1521,13 @@ async function lookupBarcode(code) {
     if (!data.product) throw new Error("not found");
     const n = data.product.nutriments || {};
     const kcal = n["energy-kcal_100g"] ?? (n["energy_100g"] ? n["energy_100g"] / 4.184 : null);
-    if (kcal == null) throw new Error("no kcal");
-    const name = [data.product.product_name_sv || data.product.product_name, (data.product.brands || "").split(",")[0]].filter(Boolean).join(", ") || "Vara " + code;
+    const name = [data.product.product_name_sv || data.product.product_name, (data.product.brands || "").split(",")[0]].filter(Boolean).join(", ") || "";
+    if (kcal == null) return pickFood({ name, ean: code, noKcal: true });
     pickFood({ name, per100: true, ean: code, kcal, p: n.proteins_100g, f: n.fat_100g, c: n.carbohydrates_100g, grams: +data.product.serving_quantity || 100 });
   } catch (e) {
-    if (status) status.textContent = `Hittade inte ${code} i Open Food Facts. Tryck Stäng och välj Skriv in själv.`;
+    // Okänd vara: skriv av förpackningen en gång, nästa skanning hittar den bland dina.
+    toast("Varan finns inte i registret. Skriv av förpackningen så känns den igen nästa gång.");
+    pickFood({ name: "", ean: code, noKcal: true });
   }
 }
 
@@ -2782,19 +2915,12 @@ const actions = {
     const res = await openSheet(
       "Min maträtt",
       `<label class="field"><span>Namn</span><input name="name" value="${esc(f.name)}" required /></label>
-       <p class="hint">${f.per100 ? "Per 100 g" : "Per portion"}</p>
-       <div class="row">
-         <label class="field"><span>Kalorier</span><input name="kcal" type="number" inputmode="decimal" step="any" value="${f.kcal ?? ""}" /></label>
-         <label class="field"><span>Protein g</span><input name="p" type="number" inputmode="decimal" step="any" value="${f.p ?? ""}" /></label>
-       </div>
-       <div class="row">
-         <label class="field"><span>Fett g</span><input name="f" type="number" inputmode="decimal" step="any" value="${f.f ?? ""}" /></label>
-         <label class="field"><span>Kolhydrater g</span><input name="c" type="number" inputmode="decimal" step="any" value="${f.c ?? ""}" /></label>
-       </div>`,
-      [{ value: "ok", label: "Spara", cls: "btn-primary" }, { value: "delete", label: "Ta bort", cls: "danger", novalidate: true }, CLOSE]
+       <p class="hint">${f.recipe ? `Hemlagat, ${f.recipe.portions} portioner. Värden per portion.` : f.per100 ? "Per 100 g" : "Per portion"}</p>
+       ${macroFields(f)}`,
+      [{ value: "ok", label: "Spara", cls: "btn-primary" }, ...(f.recipe ? [{ value: "recipe", label: "Ändra receptet", novalidate: true }] : []), { value: "delete", label: "Ta bort", cls: "danger", novalidate: true }, CLOSE]
     );
-    const n = (k) => parseFloat(String(res.data[k] || 0).replace(",", ".")) || 0;
-    if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: n("kcal"), p: n("p"), f: n("f"), c: n("c") });
+    if (res.action === "recipe") return recipeEditor({ name: f.name, portions: f.recipe.portions, items: [...f.recipe.items], foodId: f.id });
+    if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: num(res.data.kcal), p: num(res.data.p), f: num(res.data.f), c: num(res.data.c) });
     else if (res.action === "delete") remove("foods", f.id);
     render();
   },
@@ -2873,8 +2999,16 @@ document.addEventListener("click", (ev) => {
   if (fp) return pickFood({ ...foodResults[fp.dataset.foodPick] });
   const fa = ev.target.closest("[data-food-act]");
   if (fa) {
+    const q = $("#food-q")?.value || "";
+    const pre = { name: queryName(q), grams: parseAmount(q) || 100 };
     if (fa.dataset.foodAct === "scan") scanBarcode();
-    else if (fa.dataset.foodAct === "manual") manualFood();
+    else if (fa.dataset.foodAct === "recipe") recipeEditor({ name: queryName(q) }, { log: true });
+    else if (fa.dataset.foodAct === "manual" && foodCtx?.onPick) {
+      const cb = foodCtx.onPick;
+      foodCtx.onPick = null;
+      sheet().onclose = null;
+      manualIngredient(pre).then(cb);
+    } else if (fa.dataset.foodAct === "manual") manualFood(pre);
     else if (fa.dataset.foodAct === "code") lookupBarcode($("#scan-code").value);
     return;
   }
@@ -2952,6 +3086,12 @@ document.addEventListener("input", (ev) => {
     const q = el.value.trim();
     if (q.length < 2) return;
     foodTimer = setTimeout(() => runFoodSearch(q), 300);
+    return;
+  }
+  if (el.name === "basis") {
+    const per100 = el.value === "100";
+    $("#grams-field").hidden = !per100;
+    $("#basis-hint").textContent = per100 ? "Skriv av näringsvärdet per 100 g från förpackningen." : "Värdena för allt tillsammans.";
     return;
   }
   if (el.id === "portion-amount") {
