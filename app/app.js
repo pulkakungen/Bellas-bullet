@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.4";
+const APP_VERSION = "2026-10-18.5";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -610,7 +610,7 @@ function render() {
     jobb: () => viewWork(),
     index: () => viewIndex(),
     coll: () => viewCollection(arg),
-    links: () => viewLinks(),
+    links: () => viewLinks(arg),
     tracker: () => viewTracker(arg || t.slice(0, 7)),
     routines: () => viewRoutines(),
     birthdays: () => viewBirthdays(),
@@ -1793,7 +1793,10 @@ function viewIndex() {
     `<section class="block"><h2>Sök</h2><input type="search" id="search" data-change="search" value="${esc(searchQuery)}" placeholder="Sök i allt du skrivit..." /><p class="hint">Tips: skriv bara <code>?</code> för allt du ska kolla upp, <code>!</code> för deadlines.</p><div id="search-results">${searchResults()}</div></section>` +
     block(
       "Samlingar",
-      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>${count(c.id)}</span></li>`).join("") || '<li class="empty">Inga samlingar än.</li>'}</ul>
+      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>${count(c.id)}</span></li>`).join("")}
+        <li><a href="#links/">Länkar</a><span class="dots"></span><span>${linkEntries().length || ""}</span></li>
+        ${linkLists().map((g) => `<li class="sub"><a href="#links/${encodeURIComponent(g)}">${esc(g)}</a><span class="dots"></span><span>${linkEntries().filter((e) => e.link.group === g).length}</span></li>`).join("")}
+        <li class="sub"><button class="link-btn" data-act="newLinkList">+ ny länklista</button></li></ul>
        <form class="log-input-row" data-form="newColl" autocomplete="off"><input name="name" placeholder="Ny samling, t.ex. Böcker att läsa" /><button class="btn-small">+</button></form>`
     ) +
     block(
@@ -1801,7 +1804,6 @@ function viewIndex() {
       `<ul class="index-list">
         <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length || ""}</span></li>
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
-        <li><a href="#links">Länkar</a><span class="dots"></span><span>${linkEntries().length || ""}</span></li>
         <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${live("entries").filter((e) => e.coll === "c-braindump").length}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>3</span></li>
         <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
@@ -1893,9 +1895,23 @@ async function fetchLinkInfo(id) {
   if (linksVisible() && !typing && !sheet().open) render();
 }
 
-function viewLinks() {
+// Egna listor (Kläder, Inredning...). Tomma listor sparas i meta så de synkas.
+const linkLists = () => {
+  const names = new Set([...(get("meta", "linklists")?.names || []), ...linkEntries().map((e) => e.link.group).filter(Boolean)]);
+  return [...names].sort((a, b) => a.localeCompare(b, "sv"));
+};
+const saveLinkLists = (names) => put("meta", { id: "linklists", names: [...new Set(names)].filter(Boolean) });
+// Vald lista: den du tittar på och sparar i. Tom = Alla.
+const currentList = () => (linkLists().includes(local.linkGroup) ? local.linkGroup : "");
+
+function viewLinks(arg) {
+  if (arg !== undefined && arg !== null) {
+    local.linkGroup = decodeURIComponent(arg);
+    saveLocal();
+  }
+  const cur = currentList();
+  const lists = linkLists();
   const items = linkEntries().sort((a, b) => b.order - a.order);
-  const groups = [...new Set(items.map((e) => e.link.group || ""))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, "sv")));
   const card = (e) => {
     const l = e.link;
     const a = `href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"`;
@@ -1905,26 +1921,34 @@ function viewLinks() {
       <a class="lc-body" ${a}><span class="lc-title">${esc(e.text)}</span><span class="lc-meta">${esc(meta)}${e.status === "done" ? " · köpt" : ""}</span></a>
       <button class="lc-more" data-act="linkMenu" data-id="${e.id}" aria-label="Ändra ${esc(e.text)}">⋯</button></li>`;
   };
-  const sections = groups
-    .map((g) => {
-      const list = items.filter((e) => (e.link.group || "") === g);
-      const sum = list.filter((e) => e.status !== "done" && e.link.price != null && (!e.link.currency || e.link.currency === "SEK")).reduce((a, e) => a + e.link.price, 0);
-      return block(esc(g || "Övrigt"), `<ul class="link-list">${list.map(card).join("")}</ul>${sum ? `<p class="hint">Totalt ${fmtPrice({ price: sum })}</p>` : ""}`);
-    })
-    .join("");
+  const section = (g, title, extra = "") => {
+    const list = items.filter((e) => (e.link.group || "") === g);
+    const sum = list.filter((e) => e.status !== "done" && e.link.price != null && (!e.link.currency || e.link.currency === "SEK")).reduce((a, e) => a + e.link.price, 0);
+    return block(
+      title,
+      `${extra}<ul class="link-list">${list.map(card).join("") || '<li class="empty hint">Inga länkar i listan än.</li>'}</ul>${sum ? `<p class="hint">Totalt ${fmtPrice({ price: sum })}</p>` : ""}`
+    );
+  };
+  const groups = [...lists, ...(items.some((e) => !e.link.group) ? [""] : [])];
+  const body = cur
+    ? section(cur, esc(cur), `<p class="list-tools"><button class="link-btn" data-act="linkListMenu">byt namn eller ta bort listan</button></p>`)
+    : groups.filter((g) => items.some((e) => (e.link.group || "") === g)).map((g) => section(g, g ? `<a href="#links/${encodeURIComponent(g)}">${esc(g)}</a>` : "Utan lista")).join("") || '<p class="hint center">Inga länkar än.</p>';
   return (
     head("Samling", "Länkar", null, null) +
+    `<nav class="list-chips" aria-label="Listor">
+      <a class="list-chip${cur ? "" : " on"}" href="#links/">Alla</a>
+      ${lists.map((g) => `<a class="list-chip${g === cur ? " on" : ""}" href="#links/${encodeURIComponent(g)}">${esc(g)} <small>${items.filter((e) => e.link.group === g).length}</small></a>`).join("")}
+      <button class="list-chip add" data-act="newLinkList">+ Ny lista</button>
+    </nav>` +
     block(
       "",
       `<form class="link-form" data-form="links" autocomplete="off">
-        <textarea name="text" rows="3" placeholder="Klistra in en eller flera länkar, gärna med lite text runt..."></textarea>
-        <label class="field"><span>Lista</span><input name="group" list="link-groups" value="${esc(local.linkGroup || "")}" placeholder="t.ex. Kläder" /></label>
-        <datalist id="link-groups">${groups.filter(Boolean).map((g) => `<option value="${esc(g)}">`).join("")}</datalist>
-        <div class="btn-row"><button class="btn-primary">Spara</button><button type="button" class="btn-small ghost" data-act="pasteLinks">Klistra in kopierad länk</button></div>
+        <textarea name="text" rows="3" placeholder="Klistra in en eller flera länkar${cur ? ` till ${esc(cur)}` : ""}..."></textarea>
+        <div class="btn-row"><button class="btn-primary">Spara${cur ? ` i ${esc(cur)}` : ""}</button><button type="button" class="btn-small ghost" data-act="pasteLinks">Klistra in kopierad länk</button></div>
       </form>
-      <p class="hint">Tips: tryck Dela i webbläsaren eller butikens app och välj Bellas Bullet, så hamnar länken här direkt.</p>`
+      <p class="hint">${cur ? `Det du sparar hamnar i <b>${esc(cur)}</b>. ` : lists.length ? "Välj en lista ovanför så hamnar det du sparar där. " : "Skapa en lista med + Ny lista, till exempel Kläder. "}Delar du från en annan app hamnar länken i listan du valde senast.</p>`
     ) +
-    (sections || '<p class="hint center">Inga länkar än.</p>')
+    body
   );
 }
 
@@ -1937,7 +1961,7 @@ async function linkMenu(id) {
     `<label class="field"><span>Namn</span><input name="name" value="${esc(e.text)}" /></label>
      <div class="row">
        <label class="field"><span>Pris (kr)</span><input name="price" type="text" inputmode="decimal" value="${l.price ?? ""}" /></label>
-       <label class="field"><span>Lista</span><input name="group" list="link-groups" value="${esc(l.group || "")}" /></label>
+       <label class="field"><span>Lista</span><select name="group"><option value="">Utan lista</option>${linkLists().map((g) => `<option${g === l.group ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
      </div>
      <p class="hint lc-url"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.url)}</a></p>`,
     [
@@ -3067,6 +3091,35 @@ const actions = {
     }
   },
   linkMenu: (d) => linkMenu(d.id),
+  newLinkList: async () => {
+    const res = await openSheet("Ny lista", '<label class="field"><span>Namn</span><input name="name" placeholder="t.ex. Kläder, Inredning, Present till mamma" required /></label>', [{ value: "ok", label: "Skapa", cls: "btn-primary" }, CLOSE]);
+    const name = res.action === "ok" ? res.data.name.trim() : "";
+    if (!name) return;
+    saveLinkLists([...linkLists(), name]);
+    go("links/" + encodeURIComponent(name));
+  },
+  linkListMenu: async () => {
+    const cur = currentList();
+    if (!cur) return;
+    const n = linkEntries().filter((e) => e.link.group === cur).length;
+    const res = await openSheet(
+      esc(cur),
+      `<label class="field"><span>Namn</span><input name="name" value="${esc(cur)}" /></label>`,
+      [{ value: "ok", label: "Byt namn", cls: "btn-primary" }, { value: "delete", label: n ? `Ta bort listan (${n} länkar flyttas till Utan lista)` : "Ta bort listan", cls: "danger" }, CLOSE]
+    );
+    const name = (res.data.name || "").trim();
+    if (res.action === "ok" && name && name !== cur) {
+      linkEntries().filter((e) => e.link.group === cur).forEach((e) => put("entries", { ...e, link: { ...e.link, group: name } }));
+      saveLinkLists(linkLists().map((g) => (g === cur ? name : g)));
+      return go("links/" + encodeURIComponent(name));
+    }
+    if (res.action === "delete") {
+      linkEntries().filter((e) => e.link.group === cur).forEach((e) => put("entries", { ...e, link: { ...e.link, group: "" } }));
+      saveLinkLists(linkLists().filter((g) => g !== cur));
+      return go("links/");
+    }
+    render();
+  },
   // Kopiera länken i butiken, tryck här: sparas direkt i vald lista.
   pasteLinks: async () => {
     let text = "";
@@ -3075,10 +3128,7 @@ const actions = {
     } catch (e) {
       return toast("Fick inte läsa urklipp. Håll fingret i rutan och välj Klistra in.");
     }
-    const group = $(".link-form input[name=group]")?.value.trim() || "";
-    local.linkGroup = group;
-    saveLocal();
-    const r = addLinks(text, group);
+    const r = addLinks(text, currentList());
     toast(r.added ? "Länken är sparad" : r.dup ? "Länken finns redan" : "Det du kopierat är ingen länk");
     render();
   },
@@ -3221,10 +3271,7 @@ document.addEventListener("submit", (ev) => {
     render();
   } else if (form.dataset.form === "links") {
     ev.preventDefault();
-    const group = form.group.value.trim();
-    local.linkGroup = group;
-    saveLocal();
-    const r = addLinks(form.text.value, group);
+    const r = addLinks(form.text.value, currentList());
     toast(r.added ? `Sparade ${r.added} ${r.added === 1 ? "länk" : "länkar"}` : r.dup ? "Länken finns redan" : "Hittade ingen länk i texten");
     render();
   } else if (form.dataset.form === "newColl") {
@@ -3752,7 +3799,7 @@ if ("serviceWorker" in navigator) {
   if (!q.has("share_url") && !q.has("share_text")) return;
   history.replaceState(null, "", location.pathname + "#links");
   const title = (q.get("share_title") || "").trim();
-  const r = addLinks([q.get("share_url"), q.get("share_text")].filter(Boolean).join(" "), local.linkGroup || "", /https?:\/\//i.test(title) ? "" : title);
+  const r = addLinks([q.get("share_url"), q.get("share_text")].filter(Boolean).join(" "), currentList(), /https?:\/\//i.test(title) ? "" : title);
   setTimeout(() => toast(r.added ? "Länken är sparad" : r.dup ? "Länken fanns redan" : "Hittade ingen länk i det du delade"), 300);
 })();
 render();
