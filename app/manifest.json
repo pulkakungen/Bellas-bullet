@@ -2,6 +2,7 @@
   "name": "Bellas Bullet",
   "short_name": "Bellas Bullet",
   "description": "Bellas digitala bullet journal",
+  "id": "./?app=bellas-bullet-2",
   "start_url": "./#day",
   "scope": "./",
   "display": "standalone",
