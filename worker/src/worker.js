@@ -2,6 +2,7 @@
 // Allt utom startsidan kräver hemligheten JOURNAL_KEY
 // (`npx wrangler secret put JOURNAL_KEY`), samma nyckel som skrivs in i appen.
 import { buildPushPayload } from "@block65/webcrypto-web-push";
+import { parseProductPage, nameFromUrl } from "./linkinfo.js";
 
 const STATE_KEY = "state";
 const SUB_KEY = "subscription";
@@ -79,6 +80,28 @@ async function handleRequest(request, env, url) {
     const res = await fetch(target.replace(/^webcal:/i, "https:"), { headers: { Accept: "text/calendar" } });
     if (!res.ok) return json({ error: `kalendern svarade ${res.status}` }, 502);
     return new Response(await res.text(), { headers: { ...CORS, "Content-Type": "text/calendar; charset=utf-8" } });
+  }
+
+  // Namn, pris och bild för en sparad länk (appen kan inte läsa andra sajter själv).
+  if (url.pathname === "/link" && request.method === "GET") {
+    const target = url.searchParams.get("url") || "";
+    if (!/^https?:\/\//i.test(target)) return json({ error: "ogiltig länk" }, 400);
+    const fallback = { title: nameFromUrl(target), price: null, currency: null, image: null, site: new URL(target).hostname.replace(/^www\./, "") };
+    try {
+      const res = await fetch(target, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8"
+        }
+      });
+      if (!res.ok) return json({ ...fallback, error: `sidan svarade ${res.status}` });
+      const html = (await res.text()).slice(0, 2_000_000);
+      return json(parseProductPage(html, res.url || target));
+    } catch (err) {
+      return json({ ...fallback, error: "sidan gick inte att läsa" });
+    }
   }
 
   // Produktsök i Open Food Facts (märkesvaror), reserv om appen inte når dem direkt.

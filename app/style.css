@@ -750,3 +750,20 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .ri-rm { border: 0; background: none; cursor: pointer; font-size: 15px; padding: 4px 6px; color: var(--ink-soft); }
 .food-miss { margin-top: 10px; }
 .field[hidden] { display: none; }
+
+/* Länkar */
+.link-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-raised); color: var(--ink); resize: vertical; }
+.link-form .btn-primary { margin-top: 4px; }
+.link-list { list-style: none; margin: 0; padding: 0; }
+.link-card { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px dotted var(--line); }
+.link-card:last-child { border-bottom: 0; }
+.lc-img { position: relative; flex: 0 0 56px; width: 56px; height: 72px; border-radius: 8px; overflow: hidden; background: var(--paper-raised); border: 1px solid var(--line); display: grid; place-items: center; text-decoration: none; }
+.lc-img span { font-family: var(--title); font-size: 28px; color: var(--ink-faint); }
+.lc-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.lc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: var(--ink); }
+.lc-title { font-family: var(--hand); font-size: 19px; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.lc-meta { font-size: 14px; color: var(--ink-soft); }
+.lc-more { border: 0; background: none; font-size: 22px; padding: 6px 8px; cursor: pointer; color: var(--ink-soft); }
+.link-card.is-done .lc-title { text-decoration: line-through; color: var(--ink-soft); }
+.link-card.is-done .lc-img { opacity: 0.5; }
+.lc-url { word-break: break-all; }

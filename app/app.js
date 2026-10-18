@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.1";
+const APP_VERSION = "2026-10-18.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -120,7 +120,8 @@ function mergeStates(a, b) {
 
 // Appen startar tom. Brain dump finns alltid, utan att behöva skapas.
 const BRAINDUMP = { id: "c-braindump", name: "Brain dump", note: true };
-const getColl = (id) => get("collections", id) || (id === BRAINDUMP.id ? BRAINDUMP : null);
+const LINKS = { id: "c-links", name: "Länkar", note: true };
+const getColl = (id) => get("collections", id) || (id === BRAINDUMP.id ? BRAINDUMP : id === LINKS.id ? LINKS : null);
 
 // Bellas städspecialer, läggs in med en knapp under Rutiner.
 // Fasta id:n: läggs aldrig in dubbelt, och det du ändrat skrivs inte över.
@@ -609,6 +610,7 @@ function render() {
     jobb: () => viewWork(),
     index: () => viewIndex(),
     coll: () => viewCollection(arg),
+    links: () => viewLinks(),
     tracker: () => viewTracker(arg || t.slice(0, 7)),
     routines: () => viewRoutines(),
     birthdays: () => viewBirthdays(),
@@ -1799,6 +1801,7 @@ function viewIndex() {
       `<ul class="index-list">
         <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length || ""}</span></li>
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
+        <li><a href="#links">Länkar</a><span class="dots"></span><span>${linkEntries().length || ""}</span></li>
         <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${live("entries").filter((e) => e.coll === "c-braindump").length}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>3</span></li>
         <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
@@ -1826,6 +1829,7 @@ function bookshelf(entries) {
 }
 
 function viewCollection(id) {
+  if (id === LINKS.id) return viewLinks();
   const c = getColl(id);
   if (!c) return head("Samling", "Hittades inte", null, null);
   const entries = entriesWhere((e) => e.coll === id && !e.parent);
@@ -1835,6 +1839,124 @@ function viewCollection(id) {
     (id === "c-braindump" ? '<p class="hint center">Skriv av dig. Sortera sen: tryck på en rad för att flytta den till en dag eller månad.</p>' : "") +
     block("", body + logForm({ coll: id }, c.view === "shelf" ? "Boktitel..." : id === "c-braindump" ? "Tanke, idé, projekt..." : "Lägg till...", c.note ? "note" : "task"))
   );
+}
+
+/* ---------------- Länkar ---------------- */
+// Saker du hittat på nätet: klistra in en eller flera länkar, eller dela från
+// webbläsaren. Workern läser sidan och plockar ut namn, pris och bild.
+const URL_RE = /https?:\/\/[^\s<>"']+/gi;
+const linkEntries = () => live("entries").filter((e) => e.coll === LINKS.id && e.link);
+const fmtPrice = (l) =>
+  l.price == null ? "" : `${Number(l.price).toLocaleString("sv-SE", Number.isInteger(+l.price) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${!l.currency || l.currency === "SEK" ? "kr" : l.currency}`;
+const prettySite = (s) => (s && s.includes(".") ? s.charAt(0).toUpperCase() + s.split(".")[0].slice(1) : s || "");
+const linksVisible = () => route().view === "links" || (route().view === "coll" && route().arg === LINKS.id);
+
+function addLinks(text, group, title = "") {
+  const urls = [...new Set((String(text).match(URL_RE) || []).map((u) => u.replace(/[).,!?]+$/, "")))];
+  const known = new Set(linkEntries().map((e) => e.link.url));
+  const added = [];
+  for (const url of urls) {
+    if (known.has(url)) continue;
+    let host;
+    try {
+      host = new URL(url).hostname.replace(/^www\./, "");
+    } catch (e) {
+      continue;
+    }
+    // "Klänning med volang - Zalando" blir "Klänning med volang"
+    const label = host.split(".")[0];
+    const clean = title.split(/\s+[|–—-]\s+/).filter((part) => !part.toLowerCase().includes(label)).join(" – ") || title;
+    const e = { id: uid(), type: "note", text: clean || host, sig: "", status: "open", order: Date.now() + added.length, coll: LINKS.id, link: { url, group, site: host, price: null, currency: null, image: null, pending: true } };
+    put("entries", e);
+    added.push(e);
+  }
+  added.forEach((e) => fetchLinkInfo(e.id));
+  return { added: added.length, dup: urls.length - added.length };
+}
+
+async function fetchLinkInfo(id) {
+  let info = null;
+  try {
+    info = await workerGet("/link?url=" + encodeURIComponent(get("entries", id).link.url));
+  } catch (err) {}
+  const e = get("entries", id);
+  if (!e || e.del) return;
+  const l = e.link;
+  // Har sidan inte gått att läsa behålls namnet du delade hellre än ett gissat ur adressen.
+  const title = l.edited ? e.text : info?.error && e.text !== l.site ? e.text : info?.title || e.text;
+  put("entries", {
+    ...e,
+    text: title,
+    link: { ...l, price: l.edited ? l.price : info?.price ?? l.price, currency: info?.currency || l.currency, image: info?.image || l.image, site: info?.site || l.site, pending: false, failed: !info || !!info.error }
+  });
+  const typing = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+  if (linksVisible() && !typing && !sheet().open) render();
+}
+
+function viewLinks() {
+  const items = linkEntries().sort((a, b) => b.order - a.order);
+  const groups = [...new Set(items.map((e) => e.link.group || ""))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, "sv")));
+  const card = (e) => {
+    const l = e.link;
+    const a = `href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"`;
+    const meta = l.pending ? "hämtar namn och pris..." : [fmtPrice(l), prettySite(l.site)].filter(Boolean).join(" · ");
+    return `<li class="link-card${e.status === "done" ? " is-done" : ""}">
+      <a class="lc-img" ${a} tabindex="-1">${l.image ? `<img src="${esc(l.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}<span>${esc((l.site || "?").charAt(0).toUpperCase())}</span></a>
+      <a class="lc-body" ${a}><span class="lc-title">${esc(e.text)}</span><span class="lc-meta">${esc(meta)}${e.status === "done" ? " · köpt" : ""}</span></a>
+      <button class="lc-more" data-act="linkMenu" data-id="${e.id}" aria-label="Ändra ${esc(e.text)}">⋯</button></li>`;
+  };
+  const sections = groups
+    .map((g) => {
+      const list = items.filter((e) => (e.link.group || "") === g);
+      const sum = list.filter((e) => e.status !== "done" && e.link.price != null && (!e.link.currency || e.link.currency === "SEK")).reduce((a, e) => a + e.link.price, 0);
+      return block(esc(g || "Övrigt"), `<ul class="link-list">${list.map(card).join("")}</ul>${sum ? `<p class="hint">Totalt ${fmtPrice({ price: sum })}</p>` : ""}`);
+    })
+    .join("");
+  return (
+    head("Samling", "Länkar", null, null) +
+    block(
+      "",
+      `<form class="link-form" data-form="links" autocomplete="off">
+        <textarea name="text" rows="3" placeholder="Klistra in en eller flera länkar, gärna med lite text runt..."></textarea>
+        <label class="field"><span>Lista</span><input name="group" list="link-groups" value="${esc(local.linkGroup || "")}" placeholder="t.ex. Kläder" /></label>
+        <datalist id="link-groups">${groups.filter(Boolean).map((g) => `<option value="${esc(g)}">`).join("")}</datalist>
+        <button class="btn-primary">Spara</button>
+      </form>
+      <p class="hint">Tips: tryck Dela i webbläsaren eller butikens app och välj Bellas Bullet, så hamnar länken här direkt.</p>`
+    ) +
+    (sections || '<p class="hint center">Inga länkar än.</p>')
+  );
+}
+
+async function linkMenu(id) {
+  const e = get("entries", id);
+  if (!e) return;
+  const l = e.link;
+  const res = await openSheet(
+    "Länk",
+    `<label class="field"><span>Namn</span><input name="name" value="${esc(e.text)}" /></label>
+     <div class="row">
+       <label class="field"><span>Pris (kr)</span><input name="price" type="text" inputmode="decimal" value="${l.price ?? ""}" /></label>
+       <label class="field"><span>Lista</span><input name="group" list="link-groups" value="${esc(l.group || "")}" /></label>
+     </div>
+     <p class="hint lc-url"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.url)}</a></p>`,
+    [
+      { value: "ok", label: "Spara", cls: "btn-primary" },
+      { value: "done", label: e.status === "done" ? "Inte köpt ändå" : "Köpt" },
+      { value: "refetch", label: "Hämta namn och pris igen" },
+      { value: "delete", label: "Ta bort", cls: "danger" },
+      CLOSE
+    ]
+  );
+  if (res.action === "ok") {
+    const price = String(res.data.price || "").trim() ? num(res.data.price) : null;
+    put("entries", { ...e, text: res.data.name.trim() || e.text, link: { ...l, price, group: res.data.group.trim(), edited: true } });
+  } else if (res.action === "done") put("entries", { ...e, status: e.status === "done" ? "open" : "done" });
+  else if (res.action === "refetch") {
+    put("entries", { ...e, link: { ...l, edited: false, pending: true } });
+    fetchLinkInfo(id);
+  } else if (res.action === "delete") remove("entries", id);
+  render();
 }
 
 /* ---------------- Kvällsgenomgång ---------------- */
@@ -2924,6 +3046,7 @@ const actions = {
     else if (res.action === "delete") remove("foods", f.id);
     render();
   },
+  linkMenu: (d) => linkMenu(d.id),
   addSpecials: () => {
     addSpecials();
     toast("Städspecialerna är inlagda");
@@ -3060,6 +3183,14 @@ document.addEventListener("submit", (ev) => {
     ev.preventDefault();
     addEntry({ date: today() }, form.text.value, { type: "note" });
     toast("Sparat i dagens logg");
+    render();
+  } else if (form.dataset.form === "links") {
+    ev.preventDefault();
+    const group = form.group.value.trim();
+    local.linkGroup = group;
+    saveLocal();
+    const r = addLinks(form.text.value, group);
+    toast(r.added ? `Sparade ${r.added} ${r.added === 1 ? "länk" : "länkar"}` : r.dup ? "Länken finns redan" : "Hittade ingen länk i texten");
     render();
   } else if (form.dataset.form === "newColl") {
     ev.preventDefault();
@@ -3580,6 +3711,15 @@ if ("serviceWorker" in navigator) {
     })
     .catch(() => {});
 }
+// Delat från en annan app (Android: Dela, Bellas Bullet) hamnar bland länkarna.
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("share_url") && !q.has("share_text")) return;
+  history.replaceState(null, "", location.pathname + "#links");
+  const title = (q.get("share_title") || "").trim();
+  const r = addLinks([q.get("share_url"), q.get("share_text")].filter(Boolean).join(" "), local.linkGroup || "", /https?:\/\//i.test(title) ? "" : title);
+  setTimeout(() => toast(r.added ? "Länken är sparad" : r.dup ? "Länken fanns redan" : "Hittade ingen länk i det du delade"), 300);
+})();
 render();
 syncNow(false);
 if (settings().workIcs && (!get("meta", "wcal") || Date.now() - get("meta", "wcal").fetchedAt > 30 * 60000)) wcalFetch(false);
