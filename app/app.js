@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.6";
+const APP_VERSION = "2026-10-18.7";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1800,6 +1800,8 @@ function searchResults() {
 }
 
 function viewIndex() {
+  // Antal skrivs ut med enhet så de inte förväxlas med sidnummer (s. 3).
+  const st = (n, one = "rad", many = "rader") => (n ? `${n} ${n === 1 ? one : many}` : "");
   const colls = live("collections")
     .filter((c) => c.id !== "c-braindump")
     .sort((a, b) => a.name.localeCompare(b.name, "sv"));
@@ -1811,26 +1813,26 @@ function viewIndex() {
     `<section class="block"><h2>Sök</h2><input type="search" id="search" data-change="search" value="${esc(searchQuery)}" placeholder="Sök i allt du skrivit..." /><p class="hint">Tips: skriv bara <code>?</code> för allt du ska kolla upp, <code>!</code> för deadlines.</p><div id="search-results">${searchResults()}</div></section>` +
     block(
       "Samlingar",
-      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>${count(c.id)}</span></li>`).join("")}
-        <li><a href="#links/">Länkar</a><span class="dots"></span><span>${linkEntries().length || ""}</span></li>
-        ${linkLists().map((g) => `<li class="sub"><a href="#links/${encodeURIComponent(g)}">${esc(g)}</a><span class="dots"></span><span>${linkEntries().filter((e) => e.link.group === g).length}</span></li>`).join("")}
+      `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>${st(count(c.id))}</span></li>`).join("")}
+        <li><a href="#links/">Länkar</a><span class="dots"></span><span>${st(linkEntries().length, "länk", "länkar")}</span></li>
+        ${linkLists().map((g) => `<li class="sub"><a href="#links/${encodeURIComponent(g)}">${esc(g)}</a><span class="dots"></span><span>${st(linkEntries().filter((e) => e.link.group === g).length, "länk", "länkar")}</span></li>`).join("")}
         <li class="sub"><button class="link-btn" data-act="newLinkList">+ ny länklista</button></li></ul>
        <form class="log-input-row" data-form="newColl" autocomplete="off"><input name="name" placeholder="Ny samling, t.ex. Böcker att läsa" /><button class="btn-small">+</button></form>`
     ) +
     block(
       "Uppslag",
       `<ul class="index-list">
-        <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length || ""}</span></li>
+        <li><a href="#jobb">Avsluta jobbdagen</a><span class="dots"></span><span>${openWork(t).length ? openWork(t).length + " öppna" : ""}</span></li>
         <li><a href="#kvall">Kvällsgenomgång</a><span class="dots"></span><span>varje kväll</span></li>
-        <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${live("entries").filter((e) => e.coll === "c-braindump").length}</span></li>
-        <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>3</span></li>
+        <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${st(live("entries").filter((e) => e.coll === "c-braindump").length)}</span></li>
+        <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>s. 3</span></li>
         <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
-        <li><a href="#gratitude">Tacksamhet</a><span class="dots"></span><span>${live("days").filter((d) => d.grateful).length}</span></li>
-        <li><a href="#birthdays">Födelsedagar</a><span class="dots"></span><span>${live("birthdays").length}</span></li>
-        <li><a href="#key">Nyckel</a><span class="dots"></span><span>2</span></li>
+        <li><a href="#gratitude">Tacksamhet</a><span class="dots"></span><span>${st(live("days").filter((d) => d.grateful).length, "dag", "dagar")}</span></li>
+        <li><a href="#birthdays">Födelsedagar</a><span class="dots"></span><span>${st(live("birthdays").length, "person", "personer")}</span></li>
+        <li><a href="#key">Nyckel</a><span class="dots"></span><span>s. 2</span></li>
         <li><a href="#tracker/${t.slice(0, 7)}">Tracker</a><span class="dots"></span><span>${monthName(t.slice(0, 7))}</span></li>
-        <li><a href="#routines">Rutiner och zoner</a><span class="dots"></span><span>${live("routines").length}</span></li>
-        ${months.map((m) => `<li><a href="#month/${m}">${monthName(m)} ${m.slice(0, 4)}</a><span class="dots"></span><span>s. ${pageNumber("month", m)}</span></li>`).join("")}
+        <li><a href="#routines">Rutiner och zoner</a><span class="dots"></span><span>${st(live("routines").length, "syssla", "sysslor")}</span></li>
+        ${months.filter((m) => pageNumber("month", m)).map((m) => `<li><a href="#month/${m}">${monthName(m)} ${m.slice(0, 4)}</a><span class="dots"></span><span>s. ${pageNumber("month", m)}</span></li>`).join("")}
         <li><a href="#settings">Inställningar</a><span class="dots"></span><span></span></li>
       </ul>`
     )
