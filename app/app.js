@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.3";
+const APP_VERSION = "2026-10-18.4";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -2524,7 +2524,8 @@ function viewSettings() {
       "Synk",
       `<p class="hint">Samma nyckel på mobil och dator, så delar de data. Nyckeln sätts i workern med <code>wrangler secret put JOURNAL_KEY</code>.</p>
        <label class="field"><span>Workerns adress</span><input data-change="workerUrl" value="${esc(workerUrl())}" autocomplete="off" /></label>
-       <label class="field"><span>Synknyckel</span><input type="password" data-change="syncKey" value="${esc(local.syncKey || "")}" autocomplete="off" /></label>
+       <label class="field"><span>Synknyckel</span><input type="password" id="sync-key" data-change="syncKey" value="${esc(local.syncKey || "")}" autocomplete="off" /></label>
+       <div class="btn-row"><button type="button" class="btn-small ghost" data-act="showKey">Visa nyckeln</button><button type="button" class="btn-small ghost" data-act="copyKey">Kopiera nyckeln</button></div>
        <p class="hint" id="sync-status">${esc(syncStatusText())}</p>
        <button class="btn-small" data-act="syncNow">Synka nu</button>`
     ) +
@@ -3045,6 +3046,25 @@ const actions = {
     if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: num(res.data.kcal), p: num(res.data.p), f: num(res.data.f), c: num(res.data.c) });
     else if (res.action === "delete") remove("foods", f.id);
     render();
+  },
+  showKey: (d, el) => {
+    const input = $("#sync-key");
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    el.textContent = show ? "Dölj nyckeln" : "Visa nyckeln";
+  },
+  copyKey: async () => {
+    const key = $("#sync-key")?.value.trim();
+    if (!key) return toast("Det finns ingen nyckel på den här enheten");
+    try {
+      await navigator.clipboard.writeText(key);
+      toast("Nyckeln är kopierad");
+    } catch (e) {
+      const input = $("#sync-key");
+      input.type = "text";
+      input.select();
+      toast("Markerad. Tryck Kopiera i menyn som dyker upp.");
+    }
   },
   linkMenu: (d) => linkMenu(d.id),
   // Kopiera länken i butiken, tryck här: sparas direkt i vald lista.
