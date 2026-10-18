@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.5";
+const APP_VERSION = "2026-10-18.6";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -657,21 +657,39 @@ function prevPage(view, arg) {
 }
 
 // Antal måndagar från 1 januari till och med datumet.
-function mondaysThrough(d) {
-  const jan1 = `${d.slice(0, 4)}-01-01`;
-  const firstMon = firstWeekday(jan1, 1);
-  return firstMon > d ? 0 : Math.floor(daysBetween(firstMon, d) / 7) + 1;
+// Sidnummer som i en riktig bok: index 1, nyckel 2, framtidslogg 3, sedan löpande
+// från månaden då dagboken började. Varje månad: månadssida, sedan veckosida före
+// varje måndag och en sida per dag. Ingen nollställning vid nyår.
+function journalStart() {
+  let min = null;
+  const see = (d) => {
+    if (d && /^\d{4}-\d{2}/.test(d) && (!min || d < min)) min = d;
+  };
+  for (const e of live("entries")) see(e.date || (e.month ? e.month + "-01" : null));
+  for (const m of live("meals")) see(m.date);
+  for (const d of live("days")) see(d.id);
+  return (min || today()).slice(0, 7) + "-01";
 }
+const mondaysBetween = (a, b) => {
+  const firstMon = firstWeekday(a, 1);
+  return firstMon > b ? 0 : Math.floor(daysBetween(firstMon, b) / 7) + 1;
+};
+const monthsBetween = (a, b) => (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
+// Sidan för en dag räknat från start: månadssidor + veckosidor + dagar.
+const dayPage = (start, d) => 3 + monthsBetween(start, d) + 1 + mondaysBetween(start, d) + daysBetween(start, d) + 1;
 
 function pageNumber(view, arg) {
-  const doy = (d) => daysBetween(`${d.slice(0, 4)}-01-01`, d) + 1;
-  if (view === "day") return 3 + +arg.slice(5, 7) + mondaysThrough(arg) + doy(arg);
-  if (view === "week") return 3 + +arg.slice(5, 7) + mondaysThrough(arg) + doy(arg) - 1;
+  const fixed = { index: 1, key: 2, future: 3 }[view];
+  if (fixed) return fixed;
+  if (!["day", "week", "month"].includes(view) || !arg) return "";
+  const start = journalStart();
   if (view === "month") {
-    const before = arg.slice(5, 7) === "01" ? null : lastOfMonth(addMonths(arg, -1));
-    return 3 + +arg.slice(5, 7) + (before ? mondaysThrough(before) + doy(before) : 0);
+    const first = arg.slice(0, 7) + "-01";
+    if (first < start) return "";
+    return first === start ? 4 : dayPage(start, addDays(first, -1)) + 1;
   }
-  return { index: 1, key: 2, future: 3 }[view] || "";
+  if (arg < start) return "";
+  return view === "day" ? dayPage(start, arg) : dayPage(start, arg) - 1;
 }
 
 // Svep åt sidan för att bläddra, som i en bok.
