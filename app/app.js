@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.2";
+const APP_VERSION = "2026-10-18.3";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1920,7 +1920,7 @@ function viewLinks() {
         <textarea name="text" rows="3" placeholder="Klistra in en eller flera länkar, gärna med lite text runt..."></textarea>
         <label class="field"><span>Lista</span><input name="group" list="link-groups" value="${esc(local.linkGroup || "")}" placeholder="t.ex. Kläder" /></label>
         <datalist id="link-groups">${groups.filter(Boolean).map((g) => `<option value="${esc(g)}">`).join("")}</datalist>
-        <button class="btn-primary">Spara</button>
+        <div class="btn-row"><button class="btn-primary">Spara</button><button type="button" class="btn-small ghost" data-act="pasteLinks">Klistra in kopierad länk</button></div>
       </form>
       <p class="hint">Tips: tryck Dela i webbläsaren eller butikens app och välj Bellas Bullet, så hamnar länken här direkt.</p>`
     ) +
@@ -3047,6 +3047,21 @@ const actions = {
     render();
   },
   linkMenu: (d) => linkMenu(d.id),
+  // Kopiera länken i butiken, tryck här: sparas direkt i vald lista.
+  pasteLinks: async () => {
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (e) {
+      return toast("Fick inte läsa urklipp. Håll fingret i rutan och välj Klistra in.");
+    }
+    const group = $(".link-form input[name=group]")?.value.trim() || "";
+    local.linkGroup = group;
+    saveLocal();
+    const r = addLinks(text, group);
+    toast(r.added ? "Länken är sparad" : r.dup ? "Länken finns redan" : "Det du kopierat är ingen länk");
+    render();
+  },
   addSpecials: () => {
     addSpecials();
     toast("Städspecialerna är inlagda");
