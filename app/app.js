@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-18.8";
+const APP_VERSION = "2026-10-19.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -814,6 +814,34 @@ const list = (rows, empty) => `<ul class="log">${rows.join("") || `<li class="em
 
 /* ---------------- Dag ---------------- */
 
+// Dubbletter: samma text, typ och plats (dag, månad eller samling). Den med mest
+// framsteg behålls (klar före påbörjad före öppen), annars den äldsta.
+const STATUS_RANK = { done: 4, started: 3, migrated: 2, struck: 1, open: 0 };
+function findDuplicates() {
+  const groups = new Map();
+  for (const e of live("entries")) {
+    if (e.link || e.parent) continue;
+    const key = [e.type, norm(e.text).replace(/\s+/g, " ").trim(), e.date || "", e.month || "", e.coll || "", e.time || ""].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const extra = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => (STATUS_RANK[b.status] || 0) - (STATUS_RANK[a.status] || 0) || (a.order || 0) - (b.order || 0));
+    extra.push(...list.slice(1));
+  }
+  return extra;
+}
+function removeDuplicates() {
+  const extra = findDuplicates();
+  for (const e of extra) {
+    childrenOf(e.id).forEach((c) => remove("entries", c.id));
+    remove("entries", e.id);
+  }
+  return extra.length;
+}
+
 function viewDay(date) {
   const t = today();
   const d = parseYmd(date);
@@ -843,6 +871,10 @@ function viewDay(date) {
   const openW = date === t && isWorkday(t) && nowMin >= workEndMinutes(t) ? openWork(t).length : 0;
   if (openW) {
     html += `<div class="banner"><span>Jobbdagen är slut. ${openW} öppna jobbuppgifter.</span><a class="btn-small" href="#jobb">Avsluta jobbdagen</a></div>`;
+  }
+  const dups = date === t ? findDuplicates().length : 0;
+  if (dups) {
+    html += `<div class="banner"><span>${dups} ${dups === 1 ? "uppgift finns" : "uppgifter finns"} två gånger.</span><button class="btn-small" data-act="dedupe">Ta bort dubbletter</button></div>`;
   }
   if (date === t && new Date().getHours() >= 18) {
     html += `<div class="banner"><span>Dags att runda av dagen.</span><a class="btn-small" href="#kvall">Kvällsgenomgång</a></div>`;
@@ -2659,7 +2691,7 @@ function viewSettings() {
     block(
       "Appen",
       `<p class="hint">Version ${APP_VERSION}. Visar telefonen en äldre version än datorn, tryck här. Det du skrivit påverkas inte.</p>
-       <button class="btn-small" data-act="forceUpdate">Hämta senaste versionen</button>`
+       <div class="btn-row"><button class="btn-small" data-act="forceUpdate">Hämta senaste versionen</button><button class="btn-small ghost" data-act="dedupe">Ta bort dubbletter</button></div>`
     ) +
     block(
       "Data",
@@ -3119,6 +3151,11 @@ const actions = {
     if (res.action === "recipe") return recipeEditor({ name: f.name, portions: f.recipe.portions, items: [...f.recipe.items], foodId: f.id });
     if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: num(res.data.kcal), p: num(res.data.p), f: num(res.data.f), c: num(res.data.c) });
     else if (res.action === "delete") remove("foods", f.id);
+    render();
+  },
+  dedupe: () => {
+    const n = removeDuplicates();
+    toast(n ? `Tog bort ${n} ${n === 1 ? "dubblett" : "dubbletter"}` : "Inga dubbletter hittades");
     render();
   },
   showKey: (d, el) => {
