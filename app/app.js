@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-19.1";
+const APP_VERSION = "2026-10-19.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -1022,7 +1022,8 @@ function wellbeingBlock(date) {
     `<div class="well-row"><span>Humör</span>${scale("mood", date, r.mood, ["Tungt", "Lite nere", "Okej", "Bra", "Toppen"])}</div>
      <div class="well-row"><span>Energi</span>${scale("energy", date, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
      <div class="well-row"><span>Vatten</span>
-       <div class="water">${Array.from({ length: Math.max(WATER_GOAL, water) }, (_, i) => `<button class="glass ${i < water ? "on" : ""}" data-act="setWater" data-val="${i + 1}" data-date="${date}" aria-label="${i + 1} glas"></button>`).join("")}</div></div>
+       <div class="water">${Array.from({ length: Math.max(WATER_GOAL, water) }, (_, i) => `<button class="glass ${i < water ? "on" : ""}" data-act="setWater" data-val="${i + 1}" data-date="${date}" aria-label="${i + 1} glas"></button>`).join("")}${water >= WATER_GOAL ? `<button class="glass-add" data-act="setWater" data-val="${water + 1}" data-date="${date}" aria-label="Ett glas till">+</button>` : ""}</div></div>
+     <p class="hint water-hint">Ett glas = 2 dl. ${water ? `${water} glas, ${(water * 0.2).toLocaleString("sv-SE", { maximumFractionDigits: 1 })} liter` : "Målet är 8 glas, 1,6 liter"}.</p>
      <div class="well-row"><span>Hälsa</span><div class="seg" role="group" aria-label="Hälsa">${[[null, "Frisk"], ["krasslig", "Krasslig"], ["sjuk", "Sjuk"]]
        .map(([v, label]) => `<button class="seg-btn ${health(date) === v ? "on" : ""}" data-act="setHealth" data-val="${v || ""}" data-date="${date}">${label}</button>`)
        .join("")}</div></div>
