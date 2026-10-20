@@ -504,7 +504,8 @@ function morningMessage(state, date) {
 // Hudvården för kvällen: hur många steg som återstår.
 function skinLeft(state, date) {
   const sc = (state.meta || {}).skincare;
-  const days = sc && (sc.prev && date <= sc.prev.until ? sc.prev.days : sc.days);
+  const hist = (sc && (sc.hist || (sc.prev ? [sc.prev] : []))) || [];
+  const days = sc && (hist.find((h) => date <= h.until) || sc).days;
   const steps = (days && days[new Date(date + "T12:00:00Z").getUTCDay()]) || [];
   return steps.filter((st) => !doneOn(state, "sk:" + st, date)).length;
 }
