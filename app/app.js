@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-20.1";
+const APP_VERSION = "2026-10-30.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -2646,6 +2646,12 @@ function viewSettings() {
        <button class="btn-small" data-act="syncNow">Synka nu</button>`
     ) +
     block(
+      "Gemensamt med Emil",
+      `<p class="hint">Städningen och födelsedagarna delas med Emils app, så ni bockar av sysslorna ihop. Inget annat delas.</p>
+       <label class="field"><span>Hushållsnyckel</span><input type="password" data-change="sharedKey" value="${esc(local.sharedKey || "")}" autocomplete="off" /></label>
+       <p class="hint">${esc(sharedStatusText())}</p>`
+    ) +
+    block(
       "Notiser",
       `<p class="hint">06:30 morgonsammanfattning, vid arbetsdagens slut (från arbetstiden, annars 16:30) om du har öppna jobbuppgifter, och 20:30 kvällsgenomgång. Kräver synknyckel.</p>
        <div class="btn-row"><button class="btn-small" data-act="enablePush">Slå på på den här enheten</button>
@@ -3511,6 +3517,57 @@ document.addEventListener("change", async (ev) => {
   if (["steps", "import", "sleep", "work"].includes(c)) render();
 });
 
+/* ---------------- Gemensamt med Emil ---------------- */
+// Städning (rutiner, zoner, det som bockats av) och födelsedagar delas med
+// Emils app via hans Worker. Allt annat stannar i din egen journal.
+const SHARED_URL = "https://arkitekten-sync.bella-sassibrass.workers.dev";
+function sharedPart() {
+  const routineIds = new Set(Object.keys(state.routines || {}));
+  const done = {};
+  for (const [id, rec] of Object.entries(state.done || {})) {
+    const key = id.split("|")[0];
+    if (key.startsWith("z:") || routineIds.has(key)) done[id] = rec;
+  }
+  return { routines: state.routines || {}, zones: state.zones || {}, done, birthdays: state.birthdays || {} };
+}
+let sharedError = "";
+let sharedLast = local.sharedLast || null;
+async function syncShared() {
+  if (!local.sharedKey) return false;
+  try {
+    const res = await fetch(SHARED_URL + "/shared", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Journal-Key": local.sharedKey },
+      body: JSON.stringify({ state: sharedPart() })
+    });
+    if (res.status === 401) throw new Error("fel hushållsnyckel");
+    if (!res.ok) throw new Error("servern svarade " + res.status);
+    state = mergeStates(state, (await res.json()).state || {});
+    persist();
+    sharedError = "";
+    sharedLast = local.sharedLast = Date.now();
+    saveLocal();
+    return true;
+  } catch (e) {
+    sharedError = e.message || "nätverksfel";
+    return false;
+  }
+}
+function sharedStatusText() {
+  if (!local.sharedKey) return "Inte kopplad. Klistra in hushållsnyckeln.";
+  if (sharedError) return "Fel: " + sharedError;
+  return sharedLast ? `Senast delat ${new Date(sharedLast).toLocaleString("sv-SE")}` : "Inte delat än.";
+}
+document.addEventListener("change", async (ev) => {
+  const el = ev.target;
+  if (el.dataset.change !== "sharedKey") return;
+  local.sharedKey = el.value.trim();
+  saveLocal();
+  const ok = await syncShared();
+  toast(ok ? "Kopplad till Emils app" : "Gick inte: " + sharedError);
+  render();
+});
+
 /* ---------------- Synk ---------------- */
 
 let syncTimer;
@@ -3540,6 +3597,11 @@ async function syncNow(manual) {
     const before = JSON.stringify(state);
     state = mergeStates(state, body.state || {});
     persist();
+    // Det delade med Emil. Kom det något nytt därifrån sparas det i din journal vid nästa synk.
+    if (local.sharedKey) {
+      const pre = JSON.stringify(sharedPart());
+      if ((await syncShared()) && JSON.stringify(sharedPart()) !== pre) scheduleSync();
+    }
     syncError = "";
     lastSync = local.lastSync = Date.now();
     saveLocal();
