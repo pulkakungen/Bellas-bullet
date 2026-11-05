@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-10-30.1";
+const APP_VERSION = "2026-11-05.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -534,6 +534,25 @@ function workoutGoal(date) {
   const poorly = Array.from({ length: 7 }, (_, i) => health(addDays(start, i))).filter(Boolean).length;
   return poorly >= 5 ? 0 : poorly >= 3 ? 1 : WORKOUT_GOAL;
 }
+// Dagens reflektion: 3 saker som var bra, 3 du är stolt över, 3 du är tacksam för.
+// Äldre dagar har bara en rad i "grateful", den räknas som första tacksamma saken.
+const REFLECT = [
+  ["good", "Bra idag", "Något som var bra"],
+  ["proud", "Stolt över", "Något du är stolt över"],
+  ["thanks", "Tacksam för", "Något du är tacksam för"]
+];
+const reflectOf = (r) => ({ good: r.good || [], proud: r.proud || [], thanks: r.thanks || (r.grateful ? [r.grateful] : []) });
+const reflectText = (r) => Object.values(reflectOf(r)).flat().filter(Boolean).join(" · ");
+const hasReflection = (r) => !!reflectText(r);
+function reflectFields(date) {
+  const ref = reflectOf(dayRec(date));
+  return `<div class="reflect">${REFLECT.map(
+    ([k, label, ph]) => `<fieldset class="reflect-group"><legend>${label}</legend>${[0, 1, 2]
+      .map((i) => `<input type="text" data-change="reflect" data-kind="${k}" data-i="${i}" data-date="${date}" value="${esc(ref[k][i] || "")}" placeholder="${i + 1}. ${ph}" aria-label="${label} ${i + 1}" />`)
+      .join("")}</fieldset>`
+  ).join("")}</div>`;
+}
+
 const setDay = (date, patch) => put("days", { ...dayRec(date), ...patch, id: date });
 
 function birthdaysOn(date) {
@@ -1042,7 +1061,7 @@ function wellbeingBlock(date) {
      <div class="well-row"><span>Medicin</span><div class="btn-row">${[["medsAm", "Morgon"], ["medsPm", "Kväll"]]
        .map(([k, label]) => `<button class="tick ${r[k] ? "on" : ""}" data-act="toggleMeds" data-key="${k}" data-date="${date}">${sym(r[k] ? "done" : "open")}${label}</button>`)
        .join("")}</div></div>
-     <label class="field"><span>Tacksam för idag</span><textarea rows="2" data-change="grateful" data-date="${date}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>`
+     ${reflectFields(date)}`
   );
 }
 
@@ -1854,7 +1873,9 @@ function searchResults() {
     for (const c of live("collections")) if (matches(c.name)) hits.push({ sort: "", html: `<li class="entry"><span class="sig"></span><span class="sym static">☰</span><a class="e-text" href="#coll/${c.id}">${mark(c.name)}<span class="e-from">samling</span></a></li>` });
     for (const b of live("birthdays")) if (matches(b.name)) hits.push({ sort: "", html: `<li class="entry ty-birthday"><span class="sig"></span><span class="sym static">${sym("birthday")}</span><a class="e-text" href="#birthdays">${mark(b.name)}<span class="e-from">${+b.md.slice(3)} ${monthName("2000-" + b.md.slice(0, 2))}</span></a></li>` });
     for (const d of live("days")) {
-      if (d.grateful && matches(d.grateful)) hits.push({ sort: d.id, html: `<li class="entry ty-note"><span class="sig"></span><span class="sym static">♡</span><a class="e-text" href="#day/${d.id}">${mark(d.grateful)}<span class="e-from">tacksam ${niceDate(d.id)}</span></a></li>` });
+      for (const [k, label] of REFLECT)
+        for (const txt of reflectOf(d)[k].filter((x) => x && matches(x)))
+          hits.push({ sort: d.id, html: `<li class="entry ty-note"><span class="sig"></span><span class="sym static">♡</span><a class="e-text" href="#day/${d.id}">${mark(txt)}<span class="e-from">${label.toLowerCase()} ${niceDate(d.id)}</span></a></li>` });
     }
     for (const w of live("weeks")) if (w.focus && matches(w.focus)) hits.push({ sort: w.id, html: `<li class="entry ty-note"><span class="sig"></span><span class="sym static">${sym("note")}</span><a class="e-text" href="#week/${w.id}">${mark(w.focus)}<span class="e-from">vecka ${isoWeek(w.id)}</span></a></li>` });
     for (const r of live("routines")) if (matches(r.name)) hits.push({ sort: "", html: `<li class="entry"><span class="sig"></span><span class="sym static">↻</span><a class="e-text" href="#routines">${mark(r.name)}<span class="e-from">rutin${lastDone(r.id, today()) ? ", senast " + niceDate(lastDone(r.id, today())) : ""}</span></a></li>` });
@@ -1894,7 +1915,7 @@ function viewIndex() {
         <li><a href="#coll/c-braindump">Brain dump</a><span class="dots"></span><span>${pageNumber("coll", "c-braindump") ? "s. " + pageNumber("coll", "c-braindump") : ""}</span></li>
         <li><a href="#future/${t.slice(0, 4)}">Framtidslogg ${t.slice(0, 4)}</a><span class="dots"></span><span>s. 3</span></li>
         <li><a href="#weight">Vikt</a><span class="dots"></span><span>${(() => { const w = weightSeries(); return w.length ? fmtKg(w[w.length - 1].kg) + " kg" : ""; })()}</span></li>
-        <li><a href="#gratitude">Tacksamhet</a><span class="dots"></span><span>${st(live("days").filter((d) => d.grateful).length, "dag", "dagar")}</span></li>
+        <li><a href="#gratitude">Bra, stolt och tacksam</a><span class="dots"></span><span>${st(live("days").filter(hasReflection).length, "dag", "dagar")}</span></li>
         <li><a href="#birthdays">Födelsedagar</a><span class="dots"></span><span>${st(live("birthdays").length, "person", "personer")}</span></li>
         <li><a href="#key">Nyckel</a><span class="dots"></span><span>s. 2</span></li>
         <li><a href="#tracker/${t.slice(0, 7)}">Tracker</a><span class="dots"></span><span>${monthName(t.slice(0, 7))}</span></li>
@@ -2111,7 +2132,7 @@ function viewEvening() {
       "1. Hur var dagen?",
       `<div class="well-row"><span>Humör</span>${scale("mood", t, r.mood, ["Tungt", "Lite nere", "Okej", "Bra", "Toppen"])}</div>
        <div class="well-row"><span>Energi</span>${scale("energy", t, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
-       <label class="field"><span>Tacksam för</span><textarea rows="2" data-change="grateful" data-date="${t}" placeholder="En sak räcker.">${esc(r.grateful || "")}</textarea></label>
+       ${reflectFields(t)}
        <form class="log-input-row" data-form="dayNote" autocomplete="off"><input name="text" placeholder="En rad om dagen, sparas som notering" /><button class="btn-small">+</button></form>`
     ) +
     block(
@@ -2443,17 +2464,19 @@ function viewWork() {
 
 function viewGratitude() {
   const days = live("days")
-    .filter((d) => d.grateful)
+    .filter(hasReflection)
     .sort((a, b) => b.id.localeCompare(a.id));
   const t = today();
-  const rows = days.map((d) => `<li><a href="#day/${d.id}" class="g-date">${niceDate(d.id)}</a><span class="g-text">${esc(d.grateful)}</span></li>`);
+  const rows = days.map((d) => {
+    const ref = reflectOf(d);
+    return `<li><a href="#day/${d.id}" class="g-date">${niceDate(d.id)}</a><div class="g-text">${REFLECT.filter(([k]) => ref[k].some(Boolean))
+      .map(([k, label]) => `<p><b>${label}:</b> ${ref[k].filter(Boolean).map(esc).join(" · ")}</p>`)
+      .join("")}</div></li>`;
+  });
   return (
-    head("En sak om dagen", "Tacksamhet", null, null) +
-    block(
-      "Idag",
-      `<textarea rows="2" data-change="grateful" data-date="${t}" placeholder="Vad är du tacksam för idag?">${esc(dayRec(t).grateful || "")}</textarea>`
-    ) +
-    block(`${days.length} dagar`, `<ul class="gratitude-list">${rows.join("") || '<li class="empty">Din första rad hamnar här.</li>'}</ul>`)
+    head("Varje kväll", "Bra, stolt och tacksam", null, null) +
+    block("Idag", reflectFields(t)) +
+    block(`${days.length} dagar`, `<ul class="gratitude-list">${rows.join("") || '<li class="empty">Din första dag hamnar här.</li>'}</ul>`)
   );
 }
 
@@ -2524,7 +2547,7 @@ function viewTracker(ym) {
     }),
     row("Vikt", (d) => cell(d, dayRec(d).weight ? "on" : "")),
     row("Sömn 7h+", (d) => cell(d, (dayRec(d).sleep || 0) >= 7 ? "on" : dayRec(d).sleep ? "half" : "", dayRec(d).sleep ? Math.round(dayRec(d).sleep) : "")),
-    row("Tacksamhet", (d) => cell(d, dayRec(d).grateful ? "on" : "")),
+    row("Bra, stolt, tacksam", (d) => cell(d, hasReflection(dayRec(d)) ? "on" : "")),
     ...(skincare() ? [row("Hudvård", (d) => {
       const st = skinStatus(d);
       return cell(d, st.all ? "on mig" : st.done ? "half" : "");
@@ -3446,6 +3469,12 @@ document.addEventListener("change", async (ev) => {
   if (!c) return;
   if (c === "steps") setDay(el.dataset.date, { steps: Math.max(0, parseInt(el.value, 10) || 0) });
   else if (c === "grateful") setDay(el.dataset.date, { grateful: el.value.trim() });
+  else if (c === "reflect") {
+    const ref = reflectOf(dayRec(el.dataset.date));
+    const list = [0, 1, 2].map((i) => ref[el.dataset.kind][i] || "");
+    list[+el.dataset.i] = el.value.trim();
+    setDay(el.dataset.date, { [el.dataset.kind]: list });
+  }
   else if (c === "work") setDay(el.dataset.date, { work: el.value.trim() });
   else if (c === "workNote") setDay(el.dataset.date, { workNote: el.value.trim() });
   else if (c === "weight") {
