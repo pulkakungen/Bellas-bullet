@@ -806,3 +806,8 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .plan-next { display: block; text-align: center; margin: 12px 0 4px; }
 .top3 { margin: 0; padding-left: 22px; font-family: var(--hand); font-size: 19px; }
 .top3 li { padding: 2px 0; }
+
+.tb-top select { flex: 0 0 82px; width: 82px; min-width: 0; font: inherit; font-size: 14px; padding: 8px 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-raised); color: var(--ink-soft); }
+.tb-star { font-family: var(--hand); font-size: 14px; color: var(--accent); padding: 3px 6px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-cell.starred { border-color: var(--accent); }
+.tb-top input { width: auto; }

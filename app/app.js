@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-08.2";
+const APP_VERSION = "2026-11-08.3";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -2111,6 +2111,7 @@ async function linkMenu(id) {
 const TB_START = 5;
 const TB_END = 24;
 const slotKey = (h, m) => `${pad(h)}:${pad(m)}`;
+const SLOTS = Array.from({ length: (TB_END - TB_START) * 2 }, (_, i) => slotKey(TB_START + Math.floor(i / 2), (i % 2) * 30));
 function scheduleOn(date) {
   const t = today();
   const items = [];
@@ -2134,6 +2135,7 @@ function viewPlan(date) {
   const t = today();
   const r = dayRec(date);
   const top = r.top || [];
+  const topAt = r.topAt || [];
   const boxes = r.boxes || {};
   const all = scheduleOn(date);
   const sched = all.filter((x) => !isTbHidden(date, x));
@@ -2146,7 +2148,8 @@ function viewPlan(date) {
     const chips = busy
       .map((x) => `<button type="button" class="tb-ev${x.work ? " work" : ""}${x.done ? " done" : ""}" data-act="tbEvent" data-date="${date}" data-key="${esc(x.key)}" data-title="${esc(x.t)}">${x.s === k || (x.s > k && x.s < kEnd) ? `<b>${x.s}</b> ` : ""}${esc(x.t)}</button>`)
       .join("");
-    return `<div class="tb-cell${busy.length ? " busy" : ""}${k === nowKey ? " now" : ""}">${chips}<input type="text" data-change="box" data-slot="${k}" data-date="${date}" value="${esc(boxes[k] || "")}" aria-label="${k}" /></div>`;
+    const stars = [0, 1, 2].filter((i) => top[i] && topAt[i] === k).map((i) => `<span class="tb-star">★ ${esc(top[i])}</span>`).join("");
+    return `<div class="tb-cell${busy.length ? " busy" : ""}${stars ? " starred" : ""}${k === nowKey ? " now" : ""}">${chips}<input type="text" data-change="box" data-slot="${k}" data-date="${date}" value="${esc(boxes[k] || "")}" aria-label="${k}" /></div>`.replace(`<input type="text" data-change="box" data-slot="${k}"`, `${stars}<input type="text" data-change="box" data-slot="${k}"`);
   };
   const rows = [];
   for (let h = TB_START; h < TB_END; h++) rows.push(`<div class="tb-hour">${pad(h)}</div>${cell(h, 0)}${cell(h, 30)}`);
@@ -2164,7 +2167,13 @@ function viewPlan(date) {
     <div class="plan-layout"><div class="plan-side">` +
     block(
       "Viktigast idag",
-      `<div class="tb-top">${[0, 1, 2].map((i) => `<label><span>${i + 1}</span><input type="text" data-change="top" data-i="${i}" data-date="${date}" value="${esc(top[i] || "")}" placeholder="${["Det viktigaste", "Sen detta", "Och detta"][i]}" /></label>`).join("")}</div>`
+      `<div class="tb-top">${[0, 1, 2]
+        .map(
+          (i) => `<label><span>${i + 1}</span><input type="text" data-change="top" data-i="${i}" data-date="${date}" value="${esc(top[i] || "")}" placeholder="${["Det viktigaste", "Sen detta", "Och detta"][i]}" />
+          <select data-change="topAt" data-i="${i}" data-date="${date}" aria-label="När gör du ${i + 1}?"><option value="">När?</option>${SLOTS.map((k) => `<option${topAt[i] === k ? " selected" : ""}>${k}</option>`).join("")}</select></label>`
+        )
+        .join("")}</div>
+       <p class="hint">Välj en tid så hamnar den i schemat, markerad med ★.</p>`
     ) +
     block(
       `<a href="#coll/${BRAINDUMP.id}">Brain dump</a>`,
@@ -3586,6 +3595,11 @@ document.addEventListener("change", async (ev) => {
     const list = [0, 1, 2].map((i) => (dayRec(el.dataset.date).top || [])[i] || "");
     list[+el.dataset.i] = el.value.trim();
     setDay(el.dataset.date, { top: list });
+  } else if (c === "topAt") {
+    const list = [0, 1, 2].map((i) => (dayRec(el.dataset.date).topAt || [])[i] || "");
+    list[+el.dataset.i] = el.value;
+    setDay(el.dataset.date, { topAt: list });
+    render();
   } else if (c === "box") {
     const boxes = { ...(dayRec(el.dataset.date).boxes || {}) };
     if (el.value.trim()) boxes[el.dataset.slot] = el.value.trim();
