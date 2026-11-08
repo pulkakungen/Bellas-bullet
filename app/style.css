@@ -784,3 +784,25 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .reflect-group legend { font-size: 13px; color: var(--ink-soft); padding: 0; margin-bottom: 4px; }
 .reflect-group input { width: 100%; box-sizing: border-box; font: inherit; font-family: var(--hand); font-size: 18px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-raised); color: var(--ink); }
 .gratitude-list .g-text p { margin: 2px 0; }
+
+/* Tidsplanering */
+.plan-layout { display: grid; gap: 0 24px; }
+@media (min-width: 820px) { .plan-layout { grid-template-columns: minmax(240px, 1fr) 1.4fr; align-items: start; } }
+.tb-top { display: grid; gap: 8px; }
+.tb-top label { display: flex; align-items: center; gap: 10px; }
+.tb-top span { font-family: var(--title); font-size: 26px; width: 18px; color: var(--accent); text-align: center; }
+.tb-top input { flex: 1; min-width: 0; font: inherit; font-family: var(--hand); font-size: 19px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-raised); color: var(--ink); }
+.tb-grid { display: grid; grid-template-columns: 30px 1fr 1fr; gap: 3px; }
+.tb-col { font-size: 12px; color: var(--ink-soft); text-align: center; }
+.tb-hour { font-size: 13px; color: var(--ink-soft); text-align: right; padding: 8px 4px 0 0; font-variant-numeric: tabular-nums; }
+.tb-cell { position: relative; min-height: 38px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-raised); display: flex; flex-direction: column; overflow: hidden; }
+.tb-cell.busy { background: color-mix(in srgb, var(--paper-raised) 80%, var(--lv2)); }
+.tb-cell.now { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.tb-cell input { flex: 1; border: 0; background: transparent; font: inherit; font-family: var(--hand); font-size: 16px; padding: 4px 6px; min-width: 0; color: var(--ink); }
+.tb-cell input:focus { outline: none; background: var(--paper); }
+.tb-ev { font-size: 11.5px; line-height: 1.25; padding: 3px 6px 0; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-ev.work { color: var(--lv1); }
+.tb-ev.done { text-decoration: line-through; }
+.plan-next { display: block; text-align: center; margin: 12px 0 4px; }
+.top3 { margin: 0; padding-left: 22px; font-family: var(--hand); font-size: 19px; }
+.top3 li { padding: 2px 0; }
