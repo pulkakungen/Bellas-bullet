@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-08.1";
+const APP_VERSION = "2026-11-08.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -2124,22 +2124,27 @@ function scheduleOn(date) {
   return items.map((x) => {
     const [h, m] = x.s.split(":").map(Number);
     const end = x.e && x.e > x.s ? x.e : slotKey(Math.min(23, h + (m >= 30 ? 1 : 0)), m >= 30 ? 0 : 30);
-    return { ...x, end };
+    return { ...x, end, key: `${x.t}|${x.s}` };
   });
 }
+// Det du dolt i tidsplaneringen: bara den dagen, eller alltid (samma titel).
+const tbHiddenTitles = () => new Set((settings().tbHiddenTitles || []).map(normTitle));
+const isTbHidden = (date, x) => (dayRec(date).tbHidden || []).includes(x.key) || tbHiddenTitles().has(normTitle(x.t));
 function viewPlan(date) {
   const t = today();
   const r = dayRec(date);
   const top = r.top || [];
   const boxes = r.boxes || {};
-  const sched = scheduleOn(date);
+  const all = scheduleOn(date);
+  const sched = all.filter((x) => !isTbHidden(date, x));
+  const hiddenCount = all.length - sched.length;
   const nowKey = date === t ? slotKey(new Date().getHours(), new Date().getMinutes() < 30 ? 0 : 30) : "";
   const cell = (h, m) => {
     const k = slotKey(h, m);
     const kEnd = m ? slotKey(h + 1, 0) : slotKey(h, 30);
     const busy = sched.filter((x) => x.s < kEnd && x.end > k);
     const chips = busy
-      .map((x) => `<span class="tb-ev${x.work ? " work" : ""}${x.done ? " done" : ""}">${x.s === k || (x.s > k && x.s < kEnd) ? `<b>${x.s}</b> ` : ""}${esc(x.t)}</span>`)
+      .map((x) => `<button type="button" class="tb-ev${x.work ? " work" : ""}${x.done ? " done" : ""}" data-act="tbEvent" data-date="${date}" data-key="${esc(x.key)}" data-title="${esc(x.t)}">${x.s === k || (x.s > k && x.s < kEnd) ? `<b>${x.s}</b> ` : ""}${esc(x.t)}</button>`)
       .join("");
     return `<div class="tb-cell${busy.length ? " busy" : ""}${k === nowKey ? " now" : ""}">${chips}<input type="text" data-change="box" data-slot="${k}" data-date="${date}" value="${esc(boxes[k] || "")}" aria-label="${k}" /></div>`;
   };
@@ -2169,6 +2174,7 @@ function viewPlan(date) {
     block(
       "Dagen",
       `<p class="hint">Det som redan står i kalendern och loggen syns i rutorna. Skriv vad du gör när.${sched.some((x) => x.work) ? " Jobb är markerat." : ""}</p>
+       <p class="hint">Tryck på något från kalendern för att dölja det här.${hiddenCount ? ` ${hiddenCount} dolda. <button type="button" class="link-btn" data-act="tbShowHidden" data-date="${date}">Visa igen</button>` : ""}</p>
        <div class="tb-grid"><div></div><div class="tb-col">:00</div><div class="tb-col">:30</div>${rows.join("")}</div>`
     ) +
     `<a class="btn-primary plan-next" href="#day/${date}">Till dagssidan</a></div></div>`
@@ -3269,6 +3275,34 @@ const actions = {
     if (res.action === "recipe") return recipeEditor({ name: f.name, portions: f.recipe.portions, items: [...f.recipe.items], foodId: f.id });
     if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: num(res.data.kcal), p: num(res.data.p), f: num(res.data.f), c: num(res.data.c) });
     else if (res.action === "delete") remove("foods", f.id);
+    render();
+  },
+  tbEvent: async (d) => {
+    const res = await openSheet(
+      esc(d.title),
+      '<p class="hint">Döljs bara i tidsplaneringen. Kalendern och dagssidan påverkas inte.</p>',
+      [{ value: "day", label: "Dölj den här dagen", cls: "btn-primary" }, { value: "always", label: "Dölj alltid med det här namnet" }, CLOSE]
+    );
+    if (res.action === "day") setDay(d.date, { tbHidden: [...new Set([...(dayRec(d.date).tbHidden || []), d.key])] });
+    else if (res.action === "always") {
+      const s = settings();
+      put("meta", { ...s, tbHiddenTitles: [...new Set([...(s.tbHiddenTitles || []), d.title])] });
+    }
+    render();
+  },
+  tbShowHidden: async (d) => {
+    const s = settings();
+    const always = (s.tbHiddenTitles || []).filter((t) => scheduleOn(d.date).some((x) => normTitle(x.t) === normTitle(t)));
+    const res = await openSheet(
+      "Dolda i tidsplaneringen",
+      `<p class="hint">${(dayRec(d.date).tbHidden || []).length ? "Det du dolt den här dagen visas igen. " : ""}${always.length ? `Döljs alltid: ${always.map(esc).join(", ")}.` : ""}</p>`,
+      [{ value: "ok", label: "Visa allt igen", cls: "btn-primary" }, CLOSE]
+    );
+    if (res.action === "ok") {
+      setDay(d.date, { tbHidden: [] });
+      const keep = (s.tbHiddenTitles || []).filter((t) => !always.includes(t));
+      put("meta", { ...s, tbHiddenTitles: keep });
+    }
     render();
   },
   dedupe: () => {

@@ -800,7 +800,7 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .tb-cell.now { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .tb-cell input { flex: 1; border: 0; background: transparent; font: inherit; font-family: var(--hand); font-size: 16px; padding: 4px 6px; min-width: 0; color: var(--ink); }
 .tb-cell input:focus { outline: none; background: var(--paper); }
-.tb-ev { font-size: 11.5px; line-height: 1.25; padding: 3px 6px 0; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-ev { font: inherit; font-size: 11.5px; line-height: 1.25; padding: 3px 6px 0; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; background: none; text-align: left; cursor: pointer; }
 .tb-ev.work { color: var(--lv1); }
 .tb-ev.done { text-decoration: line-through; }
 .plan-next { display: block; text-align: center; margin: 12px 0 4px; }
