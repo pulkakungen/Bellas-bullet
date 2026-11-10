@@ -7,14 +7,16 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-10.1";
+const APP_VERSION = "2026-11-10.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
 const DEFAULT_GCAL_CLIENT_ID = "400889692963-6f538f6tr3ek5l0v8q66af0qpik0pae6.apps.googleusercontent.com";
 
-const STATE_KEY = "bullet_state_v1";
-const LOCAL_KEY = "bullet_local_v1"; // bara den här enheten: synknyckel, Google-token
+// Demoläge (adressen slutar på ?demo): egen lagring, påhittade exempel och ingen synk.
+const DEMO = new URLSearchParams(location.search).has("demo");
+const STATE_KEY = DEMO ? "bullet_demo_state_v1" : "bullet_state_v1";
+const LOCAL_KEY = DEMO ? "bullet_demo_local_v1" : "bullet_local_v1"; // bara den här enheten: synknyckel, Google-token
 
 const STEP_GOAL = 12000;
 const WORKOUT_GOAL = 2;
@@ -648,7 +650,10 @@ function render() {
   };
   const app = $("#app");
   const pageArg = { day: arg || t, plan: arg || t, week: weekStart(arg || t), month: arg || t.slice(0, 7), links: arg !== undefined ? decodeURIComponent(arg) : currentList() }[view] ?? arg ?? "";
-  app.innerHTML = (views[view] || views.day)() + `<span class="page-no">${pageNumber(view, pageArg)}</span>`;
+  app.innerHTML =
+    (DEMO ? '<div class="demo-bar"><span>Demo med påhittade exempel. Det du ändrar stannar i demon och synkas aldrig.</span><button class="btn-small ghost" data-act="demoReset">Börja om</button></div>' : "") +
+    (views[view] || views.day)() +
+    `<span class="page-no">${pageNumber(view, pageArg)}</span>`;
   if (turnDir) {
     app.classList.remove("turn-next", "turn-prev");
     void app.offsetWidth;
@@ -3358,6 +3363,12 @@ const actions = {
     }
     render();
   },
+  demoReset: () => {
+    state = emptyState();
+    seedDemo();
+    toast("Demon är återställd");
+    render();
+  },
   dedupe: () => {
     const n = removeDuplicates();
     toast(n ? `Tog bort ${n} ${n === 1 ? "dubblett" : "dubbletter"}` : "Inga dubbletter hittades");
@@ -4111,6 +4122,77 @@ async function wcalFetch(manual) {
     if (manual) toast("Jobbkalendern: " + e.message);
   }
 }
+
+/* ---------------- Demo ---------------- */
+// Påhittat innehåll runt dagens datum, så alla delar av appen syns.
+function seedDemo() {
+  const t = today();
+  const d = (n) => addDays(t, n);
+  let o = Date.now() - 1e6;
+  const E = (text, extra = {}) => put("entries", { id: uid(), type: "task", sig: "", status: "open", order: o++, text, ...extra });
+  // logg idag, igår och imorgon
+  E("Ringa vårdcentralen", { date: t, sig: "!" });
+  E("Handla till helgen", { date: t, status: "done" });
+  E("Skicka offerten till Lindqvist", { date: t, work: true, sig: "*" });
+  E("Svara på mejl om studiedagen", { date: t, work: true, status: "started" });
+  E("Lunch med Sara", { date: t, type: "event", time: "12:00", end: "13:00" });
+  E("Tandläkaren", { date: t, type: "event", time: "16:30", end: "17:15" });
+  E("Kolla upp pris på vinterdäck", { date: t, type: "note", sig: "?" });
+  E("Boka frisör", { date: d(-1) });
+  E("Tvätta mörka kläder", { date: d(-1), status: "done" });
+  E("Föräldramöte", { date: d(1), type: "event", time: "18:00", end: "19:00" });
+  E("Lämna tillbaka paketet", { date: d(1) });
+  E("Deklarationen", { month: d(31).slice(0, 7), sig: "!" });
+  E("Planera julklappar", { month: d(31).slice(0, 7) });
+  E("Semester i Skagen", { month: d(150).slice(0, 7), type: "event" });
+  // brain dump och samlingar
+  E("Idé: fotobok från sommaren", { coll: "c-braindump", type: "note" });
+  E("Byta glödlampa i hallen", { coll: "c-braindump" });
+  const shop = "c-" + (Date.now() - 864e5 * 5).toString(36) + "demo1";
+  const books = "c-" + (Date.now() - 864e5 * 12).toString(36) + "demo2";
+  put("collections", { id: shop, name: "Att handla" });
+  put("collections", { id: books, name: "Böcker att läsa", view: "shelf" });
+  ["Havregryn", "Oumph", "Tomater", "Kaffe"].forEach((x, i) => E(x, { coll: shop, status: i === 3 ? "done" : "open" }));
+  ["Lessons in Chemistry", "Kristin Lavransdotter", "Atomic Habits"].forEach((x) => E(x, { coll: books, type: "note" }));
+  // länkar
+  const L = (text, url, price, group) => E(text, { type: "note", coll: "c-links", link: { url, group, site: new URL(url).hostname.replace(/^www\./, ""), price, currency: "SEK", image: null } });
+  put("meta", { id: "linklists", names: ["Kläder", "Inredning"], created: {} });
+  L("Ullkappa i kamel", "https://www.example.se/ullkappa", 1499, "Kläder");
+  L("Stickad tröja", "https://www.example.se/stickad-troja", 599, "Kläder");
+  L("Golvlampa i mässing", "https://www.example.se/golvlampa", 1290, "Inredning");
+  // jobbkalendern (som en inläst Outlook-fil)
+  const ev = (title, day, s, e) => ({ t: title, s: `${day}T${s}`, e: `${day}T${e}`, src: "outlook", sd: day, ed: day });
+  put("meta", { id: "wcal", fetchedAt: Date.now(), fromFile: true, events: [ev("Daglig avstämning", t, "08:15", "08:30"), ev("Workshop med teamet", t, "13:30", "15:00"), ev("Daglig avstämning", d(1), "08:15", "08:30"), ev("Kundmöte", d(1), "10:00", "11:00")] });
+  // dagar: mående, vikt, sömn, vatten och reflektion bakåt
+  for (let i = 30; i >= 1; i--) {
+    put("days", { id: d(-i), weight: Math.round((68.4 - i * 0.04 + Math.sin(i) * 0.3) * 10) / 10, mood: 3 + (i % 3 === 0 ? 1 : 0), energy: 2 + (i % 4 === 0 ? 2 : 1), sleep: 7 + (i % 2) * 0.5, water: 5 + (i % 4), steps: 7000 + ((i * 1370) % 7000), medsAm: true, medsPm: i % 5 !== 0 });
+  }
+  put("days", {
+    id: t, mood: 4, energy: 3, sleep: 7.5, water: 5, steps: 8400, medsAm: true,
+    top: ["Skicka offerten", "Träna 30 min", "Ringa vårdcentralen"], topAt: ["09:00", "17:30", "10:30"], topSt: ["", "", ""],
+    boxes: { "07:00": "Frukost och promenad", "09:00": "Skriva klart offerten", "11:00": "Mejl", "19:00": "Läsa" },
+    good: ["Bra möte med kunden", "Sol på lunchen", ""], proud: ["Sprang 5 km", "", ""], thanks: ["Emil", "Varm tröja", ""]
+  });
+  put("days", { id: d(-1), ...get("days", d(-1)), good: ["Mysig kväll"], proud: ["Fick klart rapporten"], thanks: ["Sara"] });
+  // träning, vanor, födelsedagar
+  [d(-3), d(-1)].forEach((x, i) => put("workouts", { id: "w-" + uid(), date: x, type: i ? "styrka" : "cardio" }));
+  put("habits", { id: "h-" + uid(), name: "Läsa 20 min", order: 0 });
+  put("habits", { id: "h-" + uid(), name: "Ingen skärm efter 22", order: 1 });
+  put("birthdays", { id: "b-" + uid(), name: "Mormor", md: d(3).slice(5), year: 1941 });
+  put("birthdays", { id: "b-" + uid(), name: "Sara", md: d(20).slice(5), year: 1990 });
+  // mat
+  put("meta", { id: "settings", kcalGoal: 1900, proteinGoal: 100 });
+  const M = (meal, name, kcal, p, f, c, grams) => put("meals", { id: "m-" + uid(), date: t, meal, order: o++, name, kcal, p, f, c, grams: grams || null, portions: grams ? null : 1, src: { per100: false, kcal, p, f, c } });
+  M("frukost", "Havregrynsgröt med bär", 320, 11, 7, 52);
+  M("lunch", "Libanesisk buffé", 820, 18, 53, 70);
+  M("mellanmal", "Äpple", 80, 0, 0, 19, 150);
+  put("foods", { id: "fd-" + uid(), name: "Trahana med Oumph", per100: false, kcal: 300, p: 18, f: 15.5, c: 19, used: 2, recipe: { portions: 8, items: [{ name: "Oumph The Chunk", label: "700 g", kcal: 574, p: 119, f: 3, c: 0 }, { name: "Trahana", label: "120 g", kcal: 460, p: 12, f: 1, c: 100 }, { name: "Olivolja", label: "84 g", kcal: 743, p: 0, f: 84, c: 0 }] } });
+  // hem och hudvård
+  addSpecials();
+  put("meta", { id: "skincare", v: SKIN_CHANGES.at(-1).v, days: SKINCARE_PRESET });
+  persist();
+}
+if (DEMO && !live("entries").length) seedDemo();
 
 /* ---------------- Start ---------------- */
 
