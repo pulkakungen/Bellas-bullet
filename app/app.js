@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-08.3";
+const APP_VERSION = "2026-11-10.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -917,8 +917,7 @@ function viewDay(date) {
       <button class="btn-small" data-act="migrate">Gå igenom</button></div>`;
   }
 
-  const top3 = (dayRec(date).top || []).filter(Boolean);
-  if (top3.length) html += block(`<a href="#plan/${date}">Viktigast idag</a>`, `<ol class="top3">${top3.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`);
+  if ((dayRec(date).top || []).some(Boolean)) html += block(`<a href="#plan/${date}">Viktigast idag</a>`, topList(date));
 
   // Idag: det som redan är slut döljs (utan sluttid räknas en timme).
   const nowStamp = `${t}T${pad(new Date().getHours())}:${pad(new Date().getMinutes())}`;
@@ -2131,11 +2130,22 @@ function scheduleOn(date) {
 // Det du dolt i tidsplaneringen: bara den dagen, eller alltid (samma titel).
 const tbHiddenTitles = () => new Set((settings().tbHiddenTitles || []).map(normTitle));
 const isTbHidden = (date, x) => (dayRec(date).tbHidden || []).includes(x.key) || tbHiddenTitles().has(normTitle(x.t));
+// De tre viktigaste med status: klar, flyttad till imorgon eller öppen.
+function topList(date, withMove = false) {
+  const r = dayRec(date);
+  const st = r.topSt || [];
+  const rows = (r.top || [])
+    .map((x, i) => (x ? `<li class="top-${st[i] || "open"}"><button type="button" class="check" data-act="topDone" data-i="${i}" data-date="${date}">${sym(st[i] === "done" ? "done" : st[i] === "moved" ? "migrated" : "open")}</button><span class="c-name">${esc(x)}${st[i] === "moved" ? '<span class="c-meta">flyttad till imorgon</span>' : ""}</span>${withMove && !st[i] ? `<button type="button" class="btn-small ghost" data-act="topMove" data-i="${i}" data-date="${date}">Imorgon</button>` : ""}</li>` : ""))
+    .join("");
+  return `<ul class="chores top-list">${rows}</ul>`;
+}
+
 function viewPlan(date) {
   const t = today();
   const r = dayRec(date);
   const top = r.top || [];
   const topAt = r.topAt || [];
+  const topSt = r.topSt || [];
   const boxes = r.boxes || {};
   const all = scheduleOn(date);
   const sched = all.filter((x) => !isTbHidden(date, x));
@@ -2169,11 +2179,11 @@ function viewPlan(date) {
       "Viktigast idag",
       `<div class="tb-top">${[0, 1, 2]
         .map(
-          (i) => `<label><span>${i + 1}</span><input type="text" data-change="top" data-i="${i}" data-date="${date}" value="${esc(top[i] || "")}" placeholder="${["Det viktigaste", "Sen detta", "Och detta"][i]}" />
-          <select data-change="topAt" data-i="${i}" data-date="${date}" aria-label="När gör du ${i + 1}?"><option value="">När?</option>${SLOTS.map((k) => `<option${topAt[i] === k ? " selected" : ""}>${k}</option>`).join("")}</select></label>`
+          (i) => `<label class="top-${topSt[i] || "open"}"><span>${i + 1}</span>${top[i] ? `<button type="button" class="check" data-act="topDone" data-i="${i}" data-date="${date}" aria-label="Markera ${i + 1} som klar">${sym(topSt[i] === "done" ? "done" : topSt[i] === "moved" ? "migrated" : "open")}</button>` : ""}<input type="text" data-change="top" data-i="${i}" data-date="${date}" value="${esc(top[i] || "")}" placeholder="${["Det viktigaste", "Sen detta", "Och detta"][i]}" />
+          <select data-change="topAt" data-i="${i}" data-date="${date}" aria-label="När gör du ${i + 1}?"><option value="">När?</option>${SLOTS.map((k) => `<option${topAt[i] === k ? " selected" : ""}>${k}</option>`).join("")}</select>${top[i] && topSt[i] !== "done" ? `<button type="button" class="top-move" data-act="topMove" data-i="${i}" data-date="${date}" title="Flytta till imorgon" aria-label="Flytta ${i + 1} till imorgon">${topSt[i] === "moved" ? "↩" : "→"}</button>` : ""}</label>`
         )
         .join("")}</div>
-       <p class="hint">Välj en tid så hamnar den i schemat, markerad med ★.</p>`
+       <p class="hint">Välj en tid så hamnar den i schemat, markerad med ★. Bocka av när det är gjort, eller flytta till imorgon med →.</p>`
     ) +
     block(
       `<a href="#coll/${BRAINDUMP.id}">Brain dump</a>`,
@@ -2224,7 +2234,8 @@ function viewEvening() {
     head("Kvällsgenomgång", "Ikväll", null, null, `<div class="eyebrow">${WD_LONG[parseYmd(t).getDay()]} ${niceDate(t)}</div>`) +
     block(
       "1. Hur var dagen?",
-      `<div class="well-row"><span>Humör</span>${scale("mood", t, r.mood, ["Tungt", "Lite nere", "Okej", "Bra", "Toppen"])}</div>
+      `${(r.top || []).some(Boolean) ? `<h3>Dagens viktigaste</h3>${topList(t, true)}` : ""}
+       <div class="well-row"><span>Humör</span>${scale("mood", t, r.mood, ["Tungt", "Lite nere", "Okej", "Bra", "Toppen"])}</div>
        <div class="well-row"><span>Energi</span>${scale("energy", t, r.energy, ["Slut", "Låg", "Okej", "Pigg", "Full fart"])}</div>
        ${reflectFields(t)}
        <form class="log-input-row" data-form="dayNote" autocomplete="off"><input name="text" placeholder="En rad om dagen, sparas som notering" /><button class="btn-small">+</button></form>`
@@ -3284,6 +3295,39 @@ const actions = {
     if (res.action === "recipe") return recipeEditor({ name: f.name, portions: f.recipe.portions, items: [...f.recipe.items], foodId: f.id });
     if (res.action === "ok") put("foods", { ...f, name: res.data.name.trim(), kcal: num(res.data.kcal), p: num(res.data.p), f: num(res.data.f), c: num(res.data.c) });
     else if (res.action === "delete") remove("foods", f.id);
+    render();
+  },
+  topDone: (d) => {
+    const st = [0, 1, 2].map((i) => (dayRec(d.date).topSt || [])[i] || "");
+    st[+d.i] = st[+d.i] === "done" ? "" : "done";
+    setDay(d.date, { topSt: st });
+    render();
+  },
+  topMove: (d) => {
+    const r = dayRec(d.date);
+    const st = [0, 1, 2].map((i) => (r.topSt || [])[i] || "");
+    const text = (r.top || [])[+d.i];
+    if (!text) return;
+    const next = addDays(d.date, 1);
+    const tTop = [0, 1, 2].map((i) => (dayRec(next).top || [])[i] || "");
+    if (st[+d.i] === "moved") {
+      // ångra: ta bort den från imorgon igen
+      const j = tTop.indexOf(text);
+      if (j >= 0) tTop[j] = "";
+      setDay(next, { top: tTop });
+      st[+d.i] = "";
+      setDay(d.date, { topSt: st });
+      return render();
+    }
+    if (!tTop.includes(text)) {
+      const j = tTop.indexOf("");
+      if (j < 0) return toast("Imorgon har redan tre viktigaste. Ta bort en där först.");
+      tTop[j] = text;
+      setDay(next, { top: tTop });
+    }
+    st[+d.i] = "moved";
+    setDay(d.date, { topSt: st });
+    toast("Flyttad till imorgon");
     render();
   },
   tbEvent: async (d) => {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "bullet-v22";
+const CACHE_NAME = "bullet-v23";
 const CORE_FILES = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (event) => {

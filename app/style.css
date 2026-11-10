@@ -811,3 +811,12 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 .tb-star { font-family: var(--hand); font-size: 14px; color: var(--accent); padding: 3px 6px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-cell.starred { border-color: var(--accent); }
 .tb-top input { width: auto; }
+
+.tb-top .check { flex: 0 0 auto; }
+.top-move { flex: 0 0 auto; border: 1px solid var(--line); background: var(--paper-raised); border-radius: var(--radius); padding: 7px 10px; cursor: pointer; color: var(--ink-soft); font-size: 16px; }
+.top-done input, .top-moved input, .top-list .top-done .c-name, .top-list .top-moved .c-name { text-decoration: line-through; color: var(--ink-soft); }
+.top-list li { display: flex; align-items: center; gap: 8px; }
+.top-list .c-name { flex: 1; }
+.tb-top label { gap: 6px; min-width: 0; }
+.tb-top select { flex-basis: 72px; width: 72px; padding: 8px 2px; }
+.top-move { padding: 7px 9px; }
