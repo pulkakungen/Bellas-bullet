@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-10.2";
+const APP_VERSION = "2026-11-14.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -419,6 +419,7 @@ function routineInfo(r, date) {
     return { r, done, due: parseYmd(date).getDay() === r.weekday, score: 99, label: WD_LONG[r.weekday] + "ar" };
   }
   const last = lastDone(r.id, done ? addDays(date, -1) : date);
+  if (!last && done) return { r, done, due: false, since: null, score: 0, label: "gjort idag" };
   if (!last) {
     // Aldrig gjord: sprid ut första gången över intervallet, räknat från när
     // rutinen lades in, så inte allt blir förfallet samma dag.
@@ -1007,6 +1008,7 @@ function choresBlock(date) {
   const sick = choresOff(date);
   body += `<ul class="chores">${[...shown, ...doneToday].map(row).join("") || (sick ? "" : none)}</ul>`;
   if (!isSick(date) && !dayRec(date).skipChores && (shown.length || hidden > 0)) body += `<button class="btn-small ghost skip-btn" data-act="skipChores" data-date="${date}">Ingen städning idag</button> `;
+  body += `<button class="link-btn left" data-act="otherChore" data-date="${date}">gjort något annat?</button> `;
   if (hidden > 0) body += `<button class="link-btn left" data-act="allChores">visa ${hidden} till</button>`;
   else if (showAllChores && due.length > limit) body += `<button class="link-btn left" data-act="allChores">visa färre</button>`;
   else if (!due.length && infos.some((i) => !isDaily(i))) {
@@ -3144,6 +3146,25 @@ const actions = {
   },
   togglePast: () => {
     showPastEvents = !showPastEvents;
+    render();
+  },
+  // Gjort en syssla som inte stod på listan, t.ex. vattnat i förtid: bocka av den ändå.
+  otherChore: async (d) => {
+    const shownIds = new Set([...document.querySelectorAll('.chores [data-act="toggleRoutine"]')].map((b) => b.dataset.id));
+    if (!get("routines", "r-blommor")) put("routines", { id: "r-blommor", name: "Vattna blommorna", cat: "hem", mode: "interval", every: 7, since: d.date });
+    const list = live("routines")
+      .filter((r) => !shownIds.has(r.id) && !isDone(r.id, d.date))
+      .sort((a, b) => a.name.localeCompare(b.name, "sv"));
+    const res = await openSheet(
+      "Vad har du gjort?",
+      '<p class="hint">Bocka av en syssla som inte stod på listan idag. Nästa gång räknas från idag.</p>',
+      [...list.map((r) => ({ value: "r:" + r.id, label: esc(r.name) })), CLOSE]
+    );
+    if (res.action.startsWith("r:")) {
+      const id = res.action.slice(2);
+      setDone(id, d.date, true);
+      toast(`${get("routines", id).name}: klart`);
+    }
     render();
   },
   allChores: () => {
