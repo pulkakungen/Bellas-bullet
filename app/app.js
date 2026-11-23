@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-23.1";
+const APP_VERSION = "2026-11-23.2";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -171,7 +171,7 @@ function addSpecials() {
 }
 
 // Bellas hudvårdsrutin (kväll), en variant per veckodag. 0 = söndag.
-const BASE = ["Vitamin C Cleansing Balm", "The Inkey List Hydrating Cream to Milk Cleanser"];
+const BASE = ["Vitamin C Cleansing Balm", "Biotherm Cera Cleanser Cream to Foam"];
 const EYES = ["The Ordinary Volufiline", "Lumene Nordic Sensitive Rich Eye Cream", "Xlash Pro Eyelash Serum"];
 const LUMENE = "Lumene Nordic Hydra Aqua Lumenessence Beauty Lotion";
 const Q10 = "Cien Q10 Night Mask";
@@ -195,7 +195,8 @@ const skinStepsOn = (date) => skinDaysFor(skincare(), date)?.[parseYmd(date).get
 // Rutinbyten: nytt namn för ett steg från ett visst datum.
 const SKIN_CHANGES = [
   { v: 2, until: "2026-10-17", swap: { "Nivea Cleansing Cream Caring": "The Inkey List Hydrating Cream to Milk Cleanser", "Lumene Nordic-C Glow Moisturizer": "Lumene Nordic Bloom Vitality Rich Day Cream" } },
-  { v: 3, until: "2026-10-19", swap: { "Biovène Hyaluronic Eye Filler": "Lumene Nordic Sensitive Rich Eye Cream" } }
+  { v: 3, until: "2026-10-19", swap: { "Biovène Hyaluronic Eye Filler": "Lumene Nordic Sensitive Rich Eye Cream" } },
+  { v: 4, until: "2026-11-22", swap: { "The Inkey List Hydrating Cream to Milk Cleanser": "Biotherm Cera Cleanser Cream to Foam" } }
 ];
 function migrateSkincare() {
   let sc = skincare();
