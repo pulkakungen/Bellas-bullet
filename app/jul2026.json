@@ -1,0 +1,572 @@
+{
+ "v": 1,
+ "entries": {
+  "jul26-001": {
+   "id": "jul26-001",
+   "type": "task",
+   "text": "Putsa fönster",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794193,
+   "u": 1795416794192,
+   "date": "2026-11-24"
+  },
+  "jul26-002": {
+   "id": "jul26-002",
+   "type": "task",
+   "text": "Julstjärnor",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794194,
+   "u": 1795416794192,
+   "date": "2026-11-25"
+  },
+  "jul26-003": {
+   "id": "jul26-003",
+   "type": "task",
+   "text": "Julbelysning ute",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794195,
+   "u": 1795416794192,
+   "date": "2026-11-25"
+  },
+  "jul26-004": {
+   "id": "jul26-004",
+   "type": "task",
+   "text": "Julkrans på dörren hemma",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794196,
+   "u": 1795416794192,
+   "date": "2026-11-26"
+  },
+  "jul26-005": {
+   "id": "jul26-005",
+   "type": "task",
+   "text": "Köpa Pringleskalender",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794197,
+   "u": 1795416794192,
+   "date": "2026-11-26"
+  },
+  "jul26-006": {
+   "id": "jul26-006",
+   "type": "task",
+   "text": "Saffranskaka (eller lördag i Skum)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794198,
+   "u": 1795416794192,
+   "date": "2026-11-27"
+  },
+  "jul26-007": {
+   "id": "jul26-007",
+   "type": "task",
+   "text": "Julkrans på dörren i Skum",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794199,
+   "u": 1795416794192,
+   "date": "2026-11-28"
+  },
+  "jul26-008": {
+   "id": "jul26-008",
+   "type": "task",
+   "text": "Skapa tre adventskalendrar",
+   "sig": "!",
+   "status": "open",
+   "order": 1795416794200,
+   "u": 1795416794192,
+   "date": "2026-11-30"
+  },
+  "jul26-009": {
+   "id": "jul26-009",
+   "type": "task",
+   "text": "Handla nissegrejer",
+   "sig": "!",
+   "status": "open",
+   "order": 1795416794201,
+   "u": 1795416794192,
+   "date": "2026-11-30"
+  },
+  "jul26-010": {
+   "id": "jul26-010",
+   "type": "task",
+   "text": "Luciapynta",
+   "sig": "!",
+   "status": "open",
+   "order": 1795416794202,
+   "u": 1795416794192,
+   "date": "2026-12-12"
+  },
+  "jul26-011": {
+   "id": "jul26-011",
+   "type": "task",
+   "text": "Lussebullar",
+   "sig": "!",
+   "status": "open",
+   "order": 1795416794203,
+   "u": 1795416794192,
+   "date": "2026-12-12"
+  },
+  "jul26-012": {
+   "id": "jul26-012",
+   "type": "task",
+   "text": "Storstäda (3 advent)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794204,
+   "u": 1795416794192,
+   "date": "2026-12-13"
+  },
+  "jul26-013": {
+   "id": "jul26-013",
+   "type": "task",
+   "text": "Julhandla mat (21 eller 22 dec)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794205,
+   "u": 1795416794192,
+   "date": "2026-12-21"
+  },
+  "jul26-014": {
+   "id": "jul26-014",
+   "type": "task",
+   "text": "Gran",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794206,
+   "u": 1795416794192,
+   "date": "2026-12-22"
+  },
+  "jul26-015": {
+   "id": "jul26-015",
+   "type": "task",
+   "text": "Julpynta",
+   "sig": "!",
+   "status": "open",
+   "order": 1795416794207,
+   "u": 1795416794192,
+   "date": "2026-12-22"
+  },
+  "jul26-016": {
+   "id": "jul26-016",
+   "type": "task",
+   "text": "Pepparkakor (före Lucia)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794208,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-017": {
+   "id": "jul26-017",
+   "type": "task",
+   "text": "Julkort (före Lucia)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794209,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-018": {
+   "id": "jul26-018",
+   "type": "task",
+   "text": "Julkakor",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794210,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-019": {
+   "id": "jul26-019",
+   "type": "task",
+   "text": "Julgodis",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794211,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-020": {
+   "id": "jul26-020",
+   "type": "task",
+   "text": "Skållad kavring",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794212,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-021": {
+   "id": "jul26-021",
+   "type": "task",
+   "text": "Julklappar",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794213,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-022": {
+   "id": "jul26-022",
+   "type": "task",
+   "text": "Födelsedagspresent till Emil (senast 24 dec)",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794214,
+   "u": 1795416794192,
+   "month": "2026-12"
+  },
+  "jul26-023": {
+   "id": "jul26-023",
+   "type": "task",
+   "text": "Nissen i natt (1 dec): Brev från nissen",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794215,
+   "u": 1795416794192,
+   "date": "2026-11-30"
+  },
+  "jul26-024": {
+   "id": "jul26-024",
+   "type": "task",
+   "text": "Nissen i natt (2 dec): Tavlorna hänger snett",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794216,
+   "u": 1795416794192,
+   "date": "2026-12-01"
+  },
+  "jul26-025": {
+   "id": "jul26-025",
+   "type": "task",
+   "text": "Nissen i natt (3 dec): Gosedjurens picknick på golvet",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794217,
+   "u": 1795416794192,
+   "date": "2026-12-02"
+  },
+  "jul26-026": {
+   "id": "jul26-026",
+   "type": "task",
+   "text": "Nissen i natt (4 dec): Rörliga ögon på allt i kylskåpet",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794218,
+   "u": 1795416794192,
+   "date": "2026-12-03"
+  },
+  "jul26-027": {
+   "id": "jul26-027",
+   "type": "task",
+   "text": "Nissen i natt (5 dec): Toapapper lindat runt en stol",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794219,
+   "u": 1795416794192,
+   "date": "2026-12-04"
+  },
+  "jul26-028": {
+   "id": "jul26-028",
+   "type": "task",
+   "text": "Nissen i natt (6 dec): Fotspår i mjöl på köksbänken",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794220,
+   "u": 1795416794192,
+   "date": "2026-12-05"
+  },
+  "jul26-029": {
+   "id": "jul26-029",
+   "type": "task",
+   "text": "Nissen i natt (7 dec): Makaroner i skorna",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794221,
+   "u": 1795416794192,
+   "date": "2026-12-06"
+  },
+  "jul26-030": {
+   "id": "jul26-030",
+   "type": "task",
+   "text": "Nissen i natt (8 dec): Uppäten pepparkaka med smulor kvar",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794222,
+   "u": 1795416794192,
+   "date": "2026-12-07"
+  },
+  "jul26-031": {
+   "id": "jul26-031",
+   "type": "task",
+   "text": "Nissen i natt (9 dec): Grönt vatten i toaletten",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794223,
+   "u": 1795416794192,
+   "date": "2026-12-08"
+  },
+  "jul26-032": {
+   "id": "jul26-032",
+   "type": "task",
+   "text": "Nissen i natt (10 dec): Stolarna upp och ner",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794224,
+   "u": 1795416794192,
+   "date": "2026-12-09"
+  },
+  "jul26-033": {
+   "id": "jul26-033",
+   "type": "task",
+   "text": "Nissen i natt (11 dec): Ansikten på bananerna",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794225,
+   "u": 1795416794192,
+   "date": "2026-12-10"
+  },
+  "jul26-034": {
+   "id": "jul26-034",
+   "type": "task",
+   "text": "Nissen i natt (12 dec): Snögubbe av marshmallows",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794226,
+   "u": 1795416794192,
+   "date": "2026-12-11"
+  },
+  "jul26-035": {
+   "id": "jul26-035",
+   "type": "task",
+   "text": "Nissen i natt (13 dec): Gosedjur insvepta som mumier",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794227,
+   "u": 1795416794192,
+   "date": "2026-12-12"
+  },
+  "jul26-036": {
+   "id": "jul26-036",
+   "type": "task",
+   "text": "Nissen i natt (14 dec): Ballonger överallt i ett rum",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794228,
+   "u": 1795416794192,
+   "date": "2026-12-13"
+  },
+  "jul26-037": {
+   "id": "jul26-037",
+   "type": "task",
+   "text": "Nissen i natt (15 dec): Mustasch på glaset i fotoramarna",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794229,
+   "u": 1795416794192,
+   "date": "2026-12-14"
+  },
+  "jul26-038": {
+   "id": "jul26-038",
+   "type": "task",
+   "text": "Nissen i natt (16 dec): Skattjakt med ledtrådar till godis",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794230,
+   "u": 1795416794192,
+   "date": "2026-12-15"
+  },
+  "jul26-039": {
+   "id": "jul26-039",
+   "type": "task",
+   "text": "Nissen i natt (17 dec): Färgad mjölk",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794231,
+   "u": 1795416794192,
+   "date": "2026-12-16"
+  },
+  "jul26-040": {
+   "id": "jul26-040",
+   "type": "task",
+   "text": "Nissen i natt (18 dec): Fotspår i socker på bordet",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794232,
+   "u": 1795416794192,
+   "date": "2026-12-17"
+  },
+  "jul26-041": {
+   "id": "jul26-041",
+   "type": "task",
+   "text": "Nissen i natt (19 dec): Gosedjuren sitter vid dukat bord",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794233,
+   "u": 1795416794192,
+   "date": "2026-12-18"
+  },
+  "jul26-042": {
+   "id": "jul26-042",
+   "type": "task",
+   "text": "Nissen i natt (20 dec): Morötter i ljusstakarna",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794234,
+   "u": 1795416794192,
+   "date": "2026-12-19"
+  },
+  "jul26-043": {
+   "id": "jul26-043",
+   "type": "task",
+   "text": "Nissen i natt (21 dec): Leksaksbilar i kö till kylskåpet",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794235,
+   "u": 1795416794192,
+   "date": "2026-12-20"
+  },
+  "jul26-044": {
+   "id": "jul26-044",
+   "type": "task",
+   "text": "Nissen i natt (22 dec): Lappar med ”hej!” i fickor och skor",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794236,
+   "u": 1795416794192,
+   "date": "2026-12-21"
+  },
+  "jul26-045": {
+   "id": "jul26-045",
+   "type": "task",
+   "text": "Nissen i natt (23 dec): Kalsonger i granen",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794237,
+   "u": 1795416794192,
+   "date": "2026-12-22"
+  },
+  "jul26-046": {
+   "id": "jul26-046",
+   "type": "task",
+   "text": "Nissen i natt (24 dec): Smakat på gröten och lämnat ett tackbrev",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794238,
+   "u": 1795416794192,
+   "date": "2026-12-23"
+  },
+  "jul26-047": {
+   "id": "jul26-047",
+   "type": "task",
+   "text": "Rörliga ögon",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794239,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-048": {
+   "id": "jul26-048",
+   "type": "task",
+   "text": "Karamellfärg",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794240,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-049": {
+   "id": "jul26-049",
+   "type": "task",
+   "text": "Marshmallows",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794241,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-050": {
+   "id": "jul26-050",
+   "type": "task",
+   "text": "Ballonger",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794242,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-051": {
+   "id": "jul26-051",
+   "type": "task",
+   "text": "Whiteboardpenna",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794243,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-052": {
+   "id": "jul26-052",
+   "type": "task",
+   "text": "Godis",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794244,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-053": {
+   "id": "jul26-053",
+   "type": "task",
+   "text": "Brevpapper",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794245,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-054": {
+   "id": "jul26-054",
+   "type": "task",
+   "text": "Toapapper",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794246,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-055": {
+   "id": "jul26-055",
+   "type": "task",
+   "text": "Makaroner",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794247,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  },
+  "jul26-056": {
+   "id": "jul26-056",
+   "type": "task",
+   "text": "Morötter",
+   "sig": "",
+   "status": "open",
+   "order": 1795416794248,
+   "u": 1795416794192,
+   "coll": "c-jul26-nissen"
+  }
+ },
+ "collections": {
+  "c-jul26-nissen": {
+   "id": "c-jul26-nissen",
+   "name": "Handla till nissen",
+   "u": 1795416794192
+  }
+ }
+}

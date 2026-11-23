@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-14.1";
+const APP_VERSION = "2026-11-23.1";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -4215,6 +4215,29 @@ function seedDemo() {
 }
 if (DEMO && !live("entries").length) seedDemo();
 
+/* ---------------- Paket ---------------- */
+// Listor som Claude lägger ut i packs.json (t.ex. julen) slås ihop med journalen
+// på samma sätt som synken: per post vinner den senast ändrade. Ändrar eller tar
+// du bort något i appen vinner det, tills paketet själv uppdateras igen.
+async function loadPacks() {
+  if (DEMO) return;
+  try {
+    const list = await (await fetch("packs.json", { cache: "no-cache" })).json();
+    let changed = false;
+    for (const file of list.packs || []) {
+      const pack = await (await fetch(file, { cache: "no-cache" })).json();
+      const before = JSON.stringify(state);
+      state = mergeStates(state, pack);
+      if (JSON.stringify(state) !== before) changed = true;
+    }
+    if (changed) {
+      persist();
+      scheduleSync();
+      render();
+    }
+  } catch (e) {}
+}
+
 /* ---------------- Start ---------------- */
 
 window.addEventListener("hashchange", () => {
@@ -4225,6 +4248,7 @@ window.addEventListener("hashchange", () => {
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
+    loadPacks();
     syncNow(false);
     const w = get("meta", "wcal");
     if (settings().workIcs && (!w || Date.now() - w.fetchedAt > 30 * 60000)) wcalFetch(false);
@@ -4276,5 +4300,5 @@ if ("serviceWorker" in navigator) {
   setTimeout(() => toast(r.added ? "Länken är sparad" : r.dup ? "Länken fanns redan" : "Hittade ingen länk i det du delade"), 300);
 })();
 render();
-syncNow(false);
+syncNow(false).then(loadPacks);
 if (settings().workIcs && (!get("meta", "wcal") || Date.now() - get("meta", "wcal").fetchedAt > 30 * 60000)) wcalFetch(false);
