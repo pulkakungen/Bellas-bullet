@@ -7,7 +7,7 @@
    ========================================================= */
 
 // Ändras vid varje publicering, syns under Inställningar.
-const APP_VERSION = "2026-11-23.2";
+const APP_VERSION = "2026-11-23.3";
 const DEFAULT_WORKER_URL = "https://bellas-bullet.bella-sassibrass.workers.dev";
 const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 // Bellas eget OAuth-klient-ID (projektet "bellas bullet" i Google Cloud). Inte hemligt.
@@ -311,7 +311,12 @@ function parseQuick(raw, preset) {
     work = true;
     s = s.replace(/(^|\s)#jobb\b/gi, " ");
   }
-  return { type, sig, time, end, work, text: s.replace(/\s+/g, " ").trim() };
+  let jul = !!preset.jul;
+  if (/(^|\s)#jul\b/i.test(s)) {
+    jul = true;
+    s = s.replace(/(^|\s)#jul\b/gi, " ");
+  }
+  return { type, sig, time, end, work, jul, text: s.replace(/\s+/g, " ").trim() };
 }
 
 // Kvällsplanering: "imorgon", "fre", "12/10", "2026-10-12", "nov", "v 42"
@@ -364,13 +369,14 @@ function addEntry(scope, raw, preset = {}) {
   if (p.time) e.time = p.time;
   if (p.end) e.end = p.end;
   if (p.work) e.work = true;
+  if (p.jul) e.jul = true;
   put("entries", e);
   return e;
 }
 
 function moveEntry(e, target) {
   put("entries", { ...e, status: "migrated" });
-  const copy = { id: uid(), type: e.type, text: e.text, sig: e.sig, status: e.status === "started" ? "started" : "open", order: Date.now(), from: e.id, ...(e.work ? { work: true } : {}), ...target };
+  const copy = { id: uid(), type: e.type, text: e.text, sig: e.sig, status: e.status === "started" ? "started" : "open", order: Date.now(), from: e.id, ...(e.work ? { work: true } : {}), ...(isJul(e) ? { jul: true } : {}), ...target };
   if (target.date && e.time) copy.time = e.time;
   put("entries", copy);
   for (const child of childrenOf(e.id)) {
@@ -484,6 +490,9 @@ function gcalEventsOn(date) {
 }
 
 // Hur full är dagen? Styr hur många sysslor appen föreslår.
+// Jultaggen (#jul). Julpaketets rader räknas som jul tills du tar bort taggen.
+const isJul = (e) => (e.jul !== undefined ? !!e.jul : String(e.id).startsWith("jul26-"));
+
 // Jobb eller privat: Outlook-möten och allt markerat som jobb är jobb.
 const isWorkEv = (e) => e.src === "outlook" || !!e.work;
 const privateEventsOn = (date) => gcalEventsOn(date).filter((e) => !isWorkEv(e));
@@ -800,7 +809,7 @@ function entryRow(e, opts = {}) {
   return `<li class="entry ty-${e.type} st-${e.status}">
     <span class="sig" title="${SIG_LABEL[e.sig] || ""}">${esc(e.sig || "")}</span>
     <button class="sym" data-act="cycle" data-id="${e.id}" aria-label="${TYPE_LABEL[e.type]}: ${STATUS_LABEL[e.status] || ""}">${entrySym(e)}</button>
-    <span class="e-text" data-act="entryMenu" data-id="${e.id}">${time}${esc(e.text)}${e.work ? '<span class="work-tag">jobb</span>' : ""}${from}</span>
+    <span class="e-text" data-act="entryMenu" data-id="${e.id}">${time}${esc(e.text)}${e.work ? '<span class="work-tag">jobb</span>' : ""}${isJul(e) ? '<span class="work-tag jul-tag">jul</span>' : ""}${from}</span>
   </li>${opts.noChildren ? "" : childrenOf(e.id).map((c) => entryRow(c, { child: true })).join("")}`.replace('<li class="entry', `<li class="entry${opts.child ? " child" : ""}`);
 }
 
@@ -842,6 +851,7 @@ function logForm(scope, placeholder, defType = "task") {
       <button type="button" class="chip txt" data-chip="sig" data-val="?" title="Kolla upp">?</button>
       <span class="chip-sep"></span>
       <button type="button" class="chip txt work-chip" data-chip="work" data-val="1" title="Jobb">jobb</button>
+      <button type="button" class="chip txt work-chip jul-chip" data-chip="jul" data-val="1" title="Jul">jul</button>
     </div>
     <div class="log-input-row">
       <input name="text" type="text" placeholder="${placeholder}" enterkeyhint="done" />
@@ -1863,6 +1873,7 @@ function searchResults() {
   const raw = searchQuery.trim();
   const words = raw.toLowerCase().split(/\s+/).filter(Boolean);
   const onlySig = /^[!*?]$/.test(raw);
+  const julOnly = /^#jul$/i.test(raw);
   if (!onlySig && raw.length < 2) return "";
   const matches = (text) => words.every((w) => String(text || "").toLowerCase().includes(w));
   const mark = (text) => {
@@ -1876,7 +1887,7 @@ function searchResults() {
   const href = (e) => (e.date ? `#day/${e.date}` : e.month ? `#month/${e.month}` : `#coll/${e.coll}`);
 
   for (const e of live("entries")) {
-    const ok = onlySig ? e.sig === raw && !["done", "struck", "migrated"].includes(e.status) : matches(e.text);
+    const ok = onlySig ? e.sig === raw && !["done", "struck", "migrated"].includes(e.status) : julOnly ? isJul(e) && !["done", "struck", "migrated"].includes(e.status) && !e.parent : matches(e.text);
     if (!ok) continue;
     const parent = e.parent ? get("entries", e.parent) : null;
     hits.push({
@@ -1914,7 +1925,7 @@ function viewIndex() {
   const months = Array.from({ length: 6 }, (_, i) => addMonths(t.slice(0, 7), -i));
   return (
     head("Bellas Bullet", "Index", null, null) +
-    `<section class="block"><h2>Sök</h2><input type="search" id="search" data-change="search" value="${esc(searchQuery)}" placeholder="Sök i allt du skrivit..." /><p class="hint">Tips: skriv bara <code>?</code> för allt du ska kolla upp, <code>!</code> för deadlines.</p><div id="search-results">${searchResults()}</div></section>` +
+    `<section class="block"><h2>Sök</h2><input type="search" id="search" data-change="search" value="${esc(searchQuery)}" placeholder="Sök i allt du skrivit..." /><p class="hint">Tips: skriv bara <code>?</code> för allt du ska kolla upp, <code>!</code> för deadlines, <code>#jul</code> för allt inför julen.</p><div id="search-results">${searchResults()}</div></section>` +
     block(
       "Samlingar",
       `<ul class="index-list">${colls.map((c) => `<li><a href="#coll/${c.id}">${esc(c.name)}</a><span class="dots"></span><span>s. ${pageNumber("coll", c.id)}</span></li>`).join("")}
@@ -2909,6 +2920,7 @@ async function entryMenu(id) {
     { value: "pickDate", label: `${sym("migrated")} Flytta till dag...` },
     { value: "pickMonth", label: `${sym("migrated")} Flytta till månad...` },
     { value: "work", label: e.work ? "Inte jobb" : "Markera som jobb" },
+    { value: "jul", label: isJul(e) ? "Inte jul" : "Markera som jul" },
     ...(e.parent ? [] : [{ value: "sub", label: "Lägg till delsteg" }]),
     { value: "edit", label: "Ändra" },
     { value: "delete", label: "Ta bort", cls: "danger" },
@@ -2950,6 +2962,8 @@ async function entryMenu(id) {
     }
   } else if (action === "work") {
     put("entries", { ...e, work: !e.work });
+  } else if (action === "jul") {
+    put("entries", { ...e, jul: !isJul(e) });
   } else if (action === "sub") {
     const r = await openSheet("Delsteg till: " + esc(e.text), `<label class="field"><span>Delsteg</span><input name="text" required /></label>`, [
       { value: "ok", label: "Lägg till", cls: "btn-primary" },
@@ -3570,7 +3584,8 @@ document.addEventListener("submit", (ev) => {
     const preset = {
       type: form.querySelector('[data-chip="type"].on')?.dataset.val,
       sig: form.querySelector('[data-chip="sig"].on')?.dataset.val,
-      work: !!form.querySelector('[data-chip="work"].on')
+      work: !!form.querySelector('[data-chip="work"].on'),
+      jul: !!form.querySelector('[data-chip="jul"].on')
     };
     addEntry(scope, input.value, preset);
     const keep = form.closest("section")?.querySelector("h2")?.textContent;

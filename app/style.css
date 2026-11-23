@@ -823,3 +823,5 @@ mark { background: color-mix(in srgb, var(--tape) 70%, transparent); color: inhe
 
 /* Demo */
 .demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border: 1px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft); font-size: 14px; }
+.jul-tag { background: color-mix(in srgb, #c0392b 16%, transparent); color: #a33227; }
+.chip.jul-chip.on { border-color: #a33227; color: #a33227; }
